@@ -18,6 +18,7 @@ default_install_cmd() {
 }
 
 # Read a top-level string key from a JSON file via node. $1=file $2=key
+# Exits 3 on absent/null key; callers normalize any non-zero rc to 1.
 read_json_key() {
   node -e 'const fs=require("fs");const o=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const v=o[process.argv[2]];if(v==null){process.exit(3)}process.stdout.write(String(v))' "$1" "$2"
 }
@@ -27,8 +28,12 @@ read_json_key() {
 resolve_token() {
   if [ -n "${TOOLBELT_TOKEN:-}" ]; then printf '%s' "$TOOLBELT_TOKEN"; return 0; fi
   local store="$TOOLBELT_STATE_DIR/token"
-  if [ -s "$store" ]; then cat "$store"; return 0; fi
+  if [ -s "$store" ]; then cat "$store"; return 0; fi  # -s: reuse only a non-empty token file
   mkdir -p "$TOOLBELT_STATE_DIR"
+  # TOOLBELT_INSTALL_CMD is an operator-only escape hatch: it is eval'd verbatim.
+  # The default is built by default_install_cmd (TOOLBELT_HOST is %q-quoted). Never
+  # expose this var to user-controlled input. Onboarding output goes to stderr so it
+  # cannot contaminate the token captured via command substitution.
   local cmd="${TOOLBELT_INSTALL_CMD:-$(default_install_cmd)}"
   eval "$cmd" >&2 || return 1
   local tok
