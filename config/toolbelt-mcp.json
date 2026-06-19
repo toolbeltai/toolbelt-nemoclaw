@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "toolbelt": {
+        "type": "http",
+        "url": "__TOOLBELT_MCP_URL__",
+        "headers": {
+          "Authorization": "Bearer openshell:resolve:env:TOOLBELT_TOKEN"
+        }
+      }
+    }
+  }
+}
