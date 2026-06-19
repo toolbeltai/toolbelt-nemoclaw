@@ -18,12 +18,20 @@ means two things, both baked into the image at build time:
 2. The **`@toolbeltai/skills`** package (from ClawHub) is installed into the agent's skills
    directory.
 
-The wrapper is a **packaging and integration** layer, not an API gateway and not a process
-supervisor. NemoClaw remains CLI/agent-driven; we do not add a new network surface.
+In addition, the wrapper owns a small **onboarding bootstrap** at startup: it binds the agent
+to a specific **Toolbelt instance** (URL + token) supplied at runtime. If a token is provided
+it is used as-is; if no token is provided, the bootstrap runs onboarding against the instance
+URL to obtain one and persists it so restarts reuse it.
+
+The wrapper is a **packaging, integration, and instance-binding** layer, not an API gateway and
+not a process supervisor. NemoClaw remains CLI/agent-driven; we do not add a new network
+surface. The only runtime logic we add is the thin pre-launch onboarding shim described in §5.
 
 ### Non-goals
 - No HTTP/gRPC API in front of NemoClaw's CLI.
-- No runtime mutation of NemoClaw's configuration.
+- No mutation of the **hash-pinned blueprint** at runtime. The onboarding shim resolves
+  instance URL/token into env or a separate writable runtime location only; it never edits the
+  pinned `openclaw.json`.
 - No Kubernetes manifests, Helm values, GPU scheduling, or network-policy configuration.
 - No CI auto-release wiring.
 - No Stripe/billing knowledge (workspace OSS-purity rule).
@@ -51,12 +59,17 @@ Established from NemoClaw's `Dockerfile` (`main`):
 - **C1 — Config is hash-pinned and immutable.** MCP/skill config cannot be edited at runtime
   without breaking the integrity check. Therefore registration and skill install happen at
   **build time**.
-- **C2 — Locked-down egress.** The agent reaching `mcp.toolbelt.ai` requires that host to be
-  permitted through the L7 proxy / network policy, and the MCP client must honor the proxy.
-  This is a deployment prerequisite, documented here and owned by the future K8s spec.
+- **C2 — Locked-down egress.** The agent reaching the Toolbelt instance (both the MCP endpoint
+  and, during onboarding, the instance API) requires that host to be permitted through the L7
+  proxy / network policy, and the client must honor the proxy. Deployment prerequisite,
+  documented here and owned by the future K8s spec.
 - **C3 — Secrets must not be baked.** The integrity hash covers `openclaw.json`, so any
-  secret placed there literally would be frozen into the image. Secrets must be referenced,
-  not embedded.
+  secret placed there literally would be frozen into the image. The instance URL and token are
+  referenced, not embedded.
+- **C4 — Token persistence needs a writable mount.** A token obtained during onboarding must
+  be saved outside the immutable, root-owned blueprint, in a writable state path the `sandbox`
+  user can read/write. For durability across restarts this path must be a persistent mount
+  (a volume locally; a PVC/Secret in the future K8s spec).
 
 ---
 
@@ -85,38 +98,47 @@ rewrite the integrity hash ourselves. Lighter build, but couples us to their has
 
 ## 4. Baked vs. injected
 
+The instance binding (URL + token) is **runtime**, so a single image can target any Toolbelt
+instance. Only image-shaping concerns are baked.
+
 ### Baked at build time (covered by the integrity hash)
 | Item | Mechanism | Default |
 | --- | --- | --- |
-| Toolbelt MCP server entry in `openclaw.json` | config fragment merged into blueprint | n/a |
-| Toolbelt MCP URL | `TOOLBELT_MCP_URL` build ARG | `https://mcp.toolbelt.ai/mcp` |
+| Toolbelt MCP server entry skeleton in `openclaw.json` | config fragment merged into blueprint; URL + token are env references | n/a |
 | `@toolbeltai/skills` | ClawHub install into skills dir | `TOOLBELT_SKILLS_VERSION` ARG, default latest |
 | NemoClaw base/version | `BASE_IMAGE` ARG | pinned NemoClaw sandbox tag |
 
-Because the MCP URL is baked, **edge and prod are separate image builds** (different
-`TOOLBELT_MCP_URL`), not a runtime toggle. This respects C1.
+The MCP entry is baked as a **skeleton referencing env** (e.g. URL `${TOOLBELT_URL}`, auth
+`${TOOLBELT_TOKEN}`), so the hash covers the placeholder strings, not the per-instance values
+(satisfies C1 + C3). One image, many instances.
 
 `@toolbeltai/skills` is **floating**: each build pulls the current published version (ARG can
 pin a specific version when reproducibility is needed). A given image is still immutable; only
 the choice of version at build time floats.
 
-### Injected at runtime (env only — secrets and provider config)
-| Env var | Purpose |
-| --- | --- |
-| `TOOLBELT_SERVICE_SECRET` | value for the `X-Service-Secret` header (service-to-service auth) |
-| `TOOLBELT_USER` | value for the `X-Toolbelt-User` header |
-| `NEMOCLAW_INFERENCE_BASE_URL` | OpenAI-compatible inference endpoint (provider-agnostic passthrough) |
-| `NEMOCLAW_MODEL` | model ref (passthrough) |
-| inference API key | provider key, passed via the env var NemoClaw expects |
+### Instance binding + config (runtime, via env file)
+Supplied through an **env file** (`docker run --env-file`; later a K8s Secret/ConfigMap). The
+wrapper reads these; the onboarding shim (§5) resolves the token before launch.
 
-Secret-bearing fields in `openclaw.json` are baked as **env-var references**
-(e.g. `"X-Service-Secret": "${TOOLBELT_SERVICE_SECRET}"`) so the hash covers the placeholder
-string, not the resolved secret (satisfies C3).
+| Env var | Purpose | Required |
+| --- | --- | --- |
+| `TOOLBELT_URL` | Toolbelt instance base URL (MCP endpoint + onboarding API) | yes |
+| `TOOLBELT_TOKEN` | instance auth token. If set, used as-is | no |
+| `TOOLBELT_STATE_DIR` | writable path where an onboarding-obtained token is persisted | defaulted |
+| `NEMOCLAW_INFERENCE_BASE_URL` | OpenAI-compatible inference endpoint (provider-agnostic passthrough) | yes |
+| `NEMOCLAW_MODEL` | model ref (passthrough) | yes |
+| inference API key | provider key, via the env var NemoClaw expects | yes |
+
+**Token model:** the Toolbelt token is the auth used to reach the instance's MCP endpoint. If
+`TOOLBELT_TOKEN` is provided it is used directly; if absent, the onboarding shim obtains one
+from `TOOLBELT_URL` and **persists it to `TOOLBELT_STATE_DIR`** so subsequent starts reuse it
+without re-onboarding (C4). This supersedes the earlier `X-Service-Secret` framing for the MCP
+connection.
 
 > **Implementation task (must-verify):** confirm OpenClaw's `openclaw.json` MCP config supports
-> env-var interpolation in header/auth fields. If it does not, the auth value cannot be baked as
-> a reference; fall back to a minimal pre-launch entrypoint shim that writes the resolved header
-> into a runtime-only location the MCP client reads, without touching the hashed file.
+> env-var interpolation in the URL and header/auth fields. If it does not, the onboarding shim
+> writes the resolved URL + token into a runtime-only config location the MCP client reads,
+> without touching the hash-pinned file.
 
 ### Inference: provider-agnostic
 The wrapper does **not** assume Toolbelt's Bifrost router or any specific provider. Inference
@@ -127,17 +149,26 @@ OpenAI-compatible endpoint) is purely an operational choice made via env at depl
 
 ## 5. Startup flow
 
-Unchanged from stock NemoClaw in the A2 path:
+The wrapper adds a thin **onboarding shim** that runs before NemoClaw's own entrypoint, then
+`exec`s it:
 
-1. `/usr/local/bin/nemoclaw-start` runs.
-2. OpenClaw gateway starts on `:18789`; integrity check passes (hash covers our baked config).
-3. Env-referenced secrets resolve into the MCP auth headers.
-4. Agent loads the baked Toolbelt skills.
-5. Toolbelt MCP server registers as a tool source (outbound via the L7 proxy — see C2).
-6. Healthcheck on `:18789/health`.
+1. **Shim — instance binding.** Read `TOOLBELT_URL` (fail fast if unset). Resolve the token:
+   - If `TOOLBELT_TOKEN` is set, use it.
+   - Else if a persisted token exists in `TOOLBELT_STATE_DIR`, reuse it.
+   - Else run onboarding against `TOOLBELT_URL`, obtain a token, and write it to
+     `TOOLBELT_STATE_DIR` (C4).
+2. **Shim — expose binding.** Export the resolved URL + token as the env the baked MCP skeleton
+   references (R2 interpolation path), or write them to the runtime-only config location the MCP
+   client reads (R2 fallback). The hash-pinned blueprint is never modified.
+3. **Hand off.** `exec /usr/local/bin/nemoclaw-start`.
+4. OpenClaw gateway starts on `:18789`; integrity check passes (hash covers the baked skeleton).
+5. Agent loads the baked Toolbelt skills.
+6. Toolbelt MCP server registers as a tool source against the bound instance (outbound via the
+   L7 proxy — see C2).
+7. Healthcheck on `:18789/health`.
 
-No new entrypoint logic in the A2 path. A1 (or the C3 fallback) would add a small pre-launch
-shim only if hash handling or secret interpolation cannot be done cleanly at build time.
+The shim is deliberately minimal: instance binding + token persistence only. It does no process
+supervision and adds no network surface.
 
 ---
 
@@ -145,13 +176,16 @@ shim only if hash handling or secret interpolation cannot be done cleanly at bui
 
 ```
 toolbelt-claw/
-├── Dockerfile                      # A2 build: extends NemoClaw, injects MCP config + skills pre-pinning
+├── Dockerfile                      # A2 build: extends NemoClaw, injects MCP skeleton + skills pre-pinning
 ├── config/
-│   └── toolbelt-mcp.json           # MCP server fragment merged into openclaw.json (URL via ARG, secrets via ${ENV})
-├── build.sh  (or Makefile)         # exposes ARGs: BASE_IMAGE, TOOLBELT_MCP_URL, TOOLBELT_SKILLS_VERSION
+│   └── toolbelt-mcp.json           # MCP server skeleton merged into openclaw.json (URL/token as ${ENV} refs)
+├── bin/
+│   └── onboard-and-start.sh        # onboarding shim: bind instance, resolve/persist token, exec nemoclaw-start
+├── build.sh  (or Makefile)         # exposes ARGs: BASE_IMAGE, TOOLBELT_SKILLS_VERSION
+├── .env.example                    # documents the runtime env file (TOOLBELT_URL/TOKEN/STATE_DIR, inference vars)
 ├── test/
 │   └── smoke.sh                    # build + assert (see §7)
-└── README.md                       # build args + required runtime env, egress prerequisite
+└── README.md                       # build args, runtime env file, state-dir mount, egress prerequisite
 ```
 
 ---
@@ -161,28 +195,44 @@ toolbelt-claw/
 A smoke test that builds the image and asserts:
 
 1. **Skills present** — `@toolbeltai/skills` exists in the agent skills directory.
-2. **MCP registered** — `openclaw.json` contains the Toolbelt MCP entry with the expected URL.
+2. **MCP skeleton baked** — `openclaw.json` contains the Toolbelt MCP entry with `${TOOLBELT_URL}` /
+   `${TOOLBELT_TOKEN}` references.
 3. **Integrity intact** — NemoClaw's runtime integrity check passes on container start.
-4. **Health** — container starts and `:18789/health` returns OK, using a mocked/dummy inference
-   endpoint and dummy secret env so no real Toolbelt/provider calls are required.
+4. **Token-provided path** — with `TOOLBELT_TOKEN` set, the shim binds the instance without
+   calling onboarding (assert no onboarding request).
+5. **Onboarding path** — with `TOOLBELT_TOKEN` unset and a **mocked** onboarding endpoint, the
+   shim obtains a token, persists it to `TOOLBELT_STATE_DIR`, and a second start reuses the
+   persisted token (no second onboarding call).
+6. **Health** — container starts and `:18789/health` returns OK, using a mocked/dummy inference
+   endpoint and dummy instance env.
 
-The test must not require live network egress to `mcp.toolbelt.ai` or a real inference provider;
-registration is structural (config + files present), not a live MCP handshake.
+The test must not require live egress to a real Toolbelt instance or inference provider;
+onboarding and inference are mocked, and MCP registration is asserted structurally, not via a
+live handshake.
 
 ---
 
 ## 8. Open implementation risks (carried into the plan)
 
 - **R1 — Hash injection point (A2).** See §3 must-verify. Gates build strategy.
-- **R2 — Env interpolation for secrets.** See §4 must-verify. Gates the C3 approach.
+- **R2 — Env interpolation for URL/token.** See §4 must-verify. Determines whether the shim sets
+  env or writes a runtime config file.
 - **R3 — ClawHub install mechanism.** Confirm how OpenClaw/NemoClaw installs skills from
   ClawHub (CLI command vs. dropping files into the skills dir) and that it works offline-ish
   within the hardened build (NemoClaw uses an offline npm lock for its own plugin install).
 - **R4 — Egress (C2).** Documented prerequisite; owned by the future K8s spec, not this one.
+- **R5 — Onboarding flow.** Confirm the actual mechanism for obtaining a token from a Toolbelt
+  instance (endpoint, request shape, whether it is interactive/device-auth vs. headless). The
+  shim's onboarding step depends on this; if onboarding is interactive, a headless container
+  may require a pre-provisioned token (`TOOLBELT_TOKEN`) as the supported path.
+- **R6 — State dir writability under hardening.** Confirm the `sandbox` user can write
+  `TOOLBELT_STATE_DIR` given Landlock/DAC hardening, and choose a default path outside the
+  immutable blueprint.
 
 ---
 
 ## 9. Future specs (not this one)
-- Kubernetes deployment: Deployment/ConfigMap/Secret, GPU scheduling, the egress/network-policy
-  allowance for `mcp.toolbelt.ai`, likely as a Helm values contribution to `toolbelt-devops/`.
+- Kubernetes deployment: Deployment/ConfigMap/Secret, GPU scheduling, a persistent volume for
+  `TOOLBELT_STATE_DIR`, and the egress/network-policy allowance for the Toolbelt instance host,
+  likely as a Helm values contribution to `toolbelt-devops/`.
 - CI auto-release wiring consistent with the workspace release pattern.
