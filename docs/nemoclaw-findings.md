@@ -133,11 +133,47 @@ OpenClaw gateway reads is:
   resolved token into `mcp.servers.toolbelt.headers.Authorization` here, then
   (optionally) recompute `.config-hash`.
 
-> Implication for the wrapper: the token cannot be supplied purely via an env
-> var that openclaw.json references; an entrypoint hook must materialize it into
-> the JSON. **UNRESOLVED — needs verification:** whether OpenClaw itself supports
-> any `${VAR}` expansion in config (not observed in the descriptor package; would
-> need to inspect the OpenClaw runtime, which was not cloned in this spike).
+### CORRECTION (post-review): NemoClaw DOES provide an env-indirection placeholder
+
+The initial conclusion above ("no env-reference mechanism") is wrong for the
+NemoClaw runtime. NemoClaw/OpenShell supports `openshell:resolve:env:<NAME>`
+placeholders that are resolved from environment variables at sandbox start, and
+they are explicitly valid inside `Bearer` Authorization headers:
+
+- `src/lib/security/credential-filter.ts:206-207` whitelists
+  `^Bearer\s+openshell:resolve:env:[A-Za-z0-9_]+$` as a safe (non-leaking) header
+  value.
+- Operators are instructed to "Replace raw secret values with
+  `openshell:resolve:env:<name>` placeholders"
+  (`src/lib/actions/sandbox/connect.ts:202`, `process-recovery.ts:570`); the same
+  mechanism is used for messaging-channel secrets across `src/lib/messaging/...`.
+
+So the auth header can be baked as:
+
+```json
+"Authorization": "Bearer openshell:resolve:env:TOOLBELT_TOKEN"
+```
+
+and the literal token is resolved from the `TOOLBELT_TOKEN` env var at start — it
+never lands in `openclaw.json` on disk.
+
+**Caveat (still unverified):** the placeholder is confirmed for `Bearer`
+Authorization header values; resolution inside the `url` field is NOT confirmed.
+Treat the non-secret `url` as something the entrypoint shim writes directly into
+the entry, and use the placeholder only for the token.
+
+### CHOSEN APPROACH for `toolbelt-claw` (placeholder)
+
+1. **Build time:** bake the `mcp.servers.toolbelt` entry into
+   `/sandbox/.openclaw/openclaw.json` (or provide it as a template the shim
+   merges) with `headers.Authorization = "Bearer openshell:resolve:env:TOOLBELT_TOKEN"`.
+2. **Runtime shim:** ensure `TOOLBELT_TOKEN` is exported (explicit env → persisted
+   in `TOOLBELT_STATE_DIR` → onboarded via `toolbelt install --client openclaw`,
+   then read back from `~/.toolbelt/config.json`), and write the resolved MCP
+   `url` into the entry. The token stays off-disk via the placeholder.
+3. No build-time re-pin is required for the default (non-`shields-up`) image; the
+   entrypoint recomputes `.config-hash` on start. Re-pin only matters under
+   `shields up`.
 
 ---
 
@@ -313,7 +349,7 @@ state does not collide with config-integrity (`shields up`) hardening of
 |---|---|---|---|
 | **R1** | Resolved | `openclaw.json` hashed via `sha256sum` into file `/sandbox/.openclaw/.config-hash`; mutable-default (`660 sandbox:sandbox`) so runtime check no-ops unless `shields up`. | `Dockerfile:966-968`, `sandbox-init.sh:570-606` |
 | **A2 vs A1** | Decided | A2 feasible (pinning is in this Dockerfile, not base). Recommend derived build + re-run `sha256sum … > .config-hash`. No ENV-var hash exists. | `Dockerfile:967` |
-| **R2** | Resolved | No `${ENV}` interpolation; token is a literal in `headers.Authorization`. Must write into `/sandbox/.openclaw/openclaw.json` at runtime. | `@toolbeltai/mcp-config@0.1.3` |
+| **R2** | Resolved (corrected) | The CLI writes a literal token, BUT NemoClaw supports `Bearer openshell:resolve:env:TOOLBELT_TOKEN` placeholders (resolved from env at start, whitelisted for Bearer headers). Chosen approach: bake the placeholder, keep token off-disk. URL placeholder unconfirmed → shim writes `url`. | `@toolbeltai/mcp-config@0.1.3`, `credential-filter.ts:206` |
 | **R3** | Resolved | Skills dir `/sandbox/.openclaw/skills`; MCP entry under `mcp.servers.<name> = { type:"http", url, headers:{Authorization:"Bearer <token>"} }`. | `Dockerfile.base:116`, mcp-config descriptor |
 | **R5** | Resolved (caveat) | `@toolbeltai/cli` (`toolbelt install --client openclaw`) headless-provisions an anonymous token via `POST /api/onboard`; stored at `~/.toolbelt/config.json` (0600), not stdout. `claim` (account-bind) is interactive. | `@toolbeltai/cli@0.1.6` `dist/index.js` |
 | **R6** | Resolved | `TOOLBELT_STATE_DIR` default = `/sandbox/.nemoclaw/state/toolbelt` (durable, sandbox-owned, outside immutable blueprint). | `Dockerfile:982-986`, `nemoclaw-start.sh:363` |
