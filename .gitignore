@@ -1,0 +1,5 @@
+# local runtime env (never commit real tokens)
+.env
+# build scratch
+*.log
+.DS_Store
