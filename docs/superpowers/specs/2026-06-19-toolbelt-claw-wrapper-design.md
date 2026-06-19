@@ -20,8 +20,10 @@ means two things, both baked into the image at build time:
 
 In addition, the wrapper owns a small **onboarding bootstrap** at startup: it binds the agent
 to a specific **Toolbelt instance** (URL + token) supplied at runtime. If a token is provided
-it is used as-is; if no token is provided, the bootstrap runs onboarding against the instance
-URL to obtain one and persists it so restarts reuse it.
+(the normal path: a user who already has an account and token) it is used as-is. If no token is
+provided, the bootstrap **delegates** to existing Toolbelt tooling, `toolbelt-cli` or the
+onboarding capability in `@toolbeltai/skills`, to obtain a token, then persists it so restarts
+reuse it. The shim does not implement its own onboarding protocol.
 
 The wrapper is a **packaging, integration, and instance-binding** layer, not an API gateway and
 not a process supervisor. NemoClaw remains CLI/agent-driven; we do not add a new network
@@ -106,6 +108,7 @@ instance. Only image-shaping concerns are baked.
 | --- | --- | --- |
 | Toolbelt MCP server entry skeleton in `openclaw.json` | config fragment merged into blueprint; URL + token are env references | n/a |
 | `@toolbeltai/skills` | ClawHub install into skills dir | `TOOLBELT_SKILLS_VERSION` ARG, default latest |
+| `toolbelt-cli` (onboarding delegate) | npm install into image | `TOOLBELT_CLI_VERSION` ARG, default latest |
 | NemoClaw base/version | `BASE_IMAGE` ARG | pinned NemoClaw sandbox tag |
 
 The MCP entry is baked as a **skeleton referencing env** (e.g. URL `${TOOLBELT_URL}`, auth
@@ -155,8 +158,9 @@ The wrapper adds a thin **onboarding shim** that runs before NemoClaw's own entr
 1. **Shim — instance binding.** Read `TOOLBELT_URL` (fail fast if unset). Resolve the token:
    - If `TOOLBELT_TOKEN` is set, use it.
    - Else if a persisted token exists in `TOOLBELT_STATE_DIR`, reuse it.
-   - Else run onboarding against `TOOLBELT_URL`, obtain a token, and write it to
-     `TOOLBELT_STATE_DIR` (C4).
+   - Else delegate to `toolbelt-cli` (or the `@toolbeltai/skills` onboarding capability) to
+     obtain a token from `TOOLBELT_URL`, then write it to `TOOLBELT_STATE_DIR` (C4). The shim
+     invokes existing tooling; it does not implement onboarding itself.
 2. **Shim — expose binding.** Export the resolved URL + token as the env the baked MCP skeleton
    references (R2 interpolation path), or write them to the runtime-only config location the MCP
    client reads (R2 fallback). The hash-pinned blueprint is never modified.
@@ -181,7 +185,7 @@ toolbelt-claw/
 │   └── toolbelt-mcp.json           # MCP server skeleton merged into openclaw.json (URL/token as ${ENV} refs)
 ├── bin/
 │   └── onboard-and-start.sh        # onboarding shim: bind instance, resolve/persist token, exec nemoclaw-start
-├── build.sh  (or Makefile)         # exposes ARGs: BASE_IMAGE, TOOLBELT_SKILLS_VERSION
+├── build.sh  (or Makefile)         # exposes ARGs: BASE_IMAGE, TOOLBELT_SKILLS_VERSION, TOOLBELT_CLI_VERSION
 ├── .env.example                    # documents the runtime env file (TOOLBELT_URL/TOKEN/STATE_DIR, inference vars)
 ├── test/
 │   └── smoke.sh                    # build + assert (see §7)
@@ -221,10 +225,11 @@ live handshake.
   ClawHub (CLI command vs. dropping files into the skills dir) and that it works offline-ish
   within the hardened build (NemoClaw uses an offline npm lock for its own plugin install).
 - **R4 — Egress (C2).** Documented prerequisite; owned by the future K8s spec, not this one.
-- **R5 — Onboarding flow.** Confirm the actual mechanism for obtaining a token from a Toolbelt
-  instance (endpoint, request shape, whether it is interactive/device-auth vs. headless). The
-  shim's onboarding step depends on this; if onboarding is interactive, a headless container
-  may require a pre-provisioned token (`TOOLBELT_TOKEN`) as the supported path.
+- **R5 — Onboarding delegate.** The no-token path delegates to `toolbelt-cli` or the
+  `@toolbeltai/skills` onboarding capability. Confirm the exact non-interactive command, what
+  credential it consumes, and how it emits the token (stdout/file) so the shim can capture and
+  persist it. If neither can run fully headless, the token-provided path remains the supported
+  K8s path and onboarding is a local/dev convenience.
 - **R6 — State dir writability under hardening.** Confirm the `sandbox` user can write
   `TOOLBELT_STATE_DIR` given Landlock/DAC hardening, and choose a default path outside the
   immutable blueprint.
