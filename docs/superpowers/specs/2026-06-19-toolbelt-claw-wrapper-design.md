@@ -1,7 +1,13 @@
 # toolbelt-claw — Wrapper Container Design
 
+> ⚠️ **SUPERSEDED (2026-06-22)** by `2026-06-22-toolbelt-claw-via-quickstart-design.md`. This
+> baked-custom-image approach fights NemoClaw's design (no pullable sandbox image; the gateway
+> won't run healthy outside the OpenShell substrate). The current direction uses NemoClaw's
+> official quickstart and plugs Toolbelt in via a blueprint preset + `toolbelt install`. The
+> implementation here (two-stage build, shim, inference wiring) is kept as verified reference only.
+
 **Date:** 2026-06-19
-**Status:** Approved (design)
+**Status:** Superseded
 **Repo:** `toolbelt-claw/` (greenfield)
 **Scope:** Container image only. Kubernetes manifests, GPU scheduling, and network
 policy are explicitly out of scope and will be separate specs.
