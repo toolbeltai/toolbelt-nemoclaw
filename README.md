@@ -53,6 +53,32 @@ The first run clones NemoClaw and builds the `sandbox` image (a few minutes); la
 > Stage 1 builds unauthenticated against the public `sandbox-base`. Set `BASE_IMAGE` only if you
 > already have a built (or authenticated) NemoClaw `sandbox` image and want to skip Stage 1.
 
+### Inference target (baked at build time)
+
+The inference endpoint and model are baked into `openclaw.json` during Stage 1; they are **not**
+read at runtime, so setting them on `docker run` has no effect. Pass them to the build instead.
+`build.sh` forwards any of these that you set into NemoClaw's Stage 1 build; unset ones use
+NemoClaw's defaults (which point at a placeholder `inference.local`, i.e. not a working model).
+
+| Inference build var | Purpose |
+|---|---|
+| `NEMOCLAW_INFERENCE_BASE_URL` | OpenAI-compatible endpoint, e.g. `https://your-endpoint/v1` |
+| `NEMOCLAW_MODEL` | model id, e.g. `meta/llama-3.3-70b-instruct` |
+| `NEMOCLAW_PRIMARY_MODEL_REF` | primary agent model ref, e.g. `inference/meta/llama-3.3-70b-instruct` |
+| `NEMOCLAW_PROVIDER_KEY` | provider key/name (default `inference`; e.g. `ollama`) |
+| `NEMOCLAW_INFERENCE_API` | API flavor (default `openai-completions`) |
+
+```bash
+NEMOCLAW_INFERENCE_BASE_URL=https://your-endpoint/v1 \
+NEMOCLAW_MODEL=meta/llama-3.3-70b-instruct \
+NEMOCLAW_PRIMARY_MODEL_REF=inference/meta/llama-3.3-70b-instruct \
+REBUILD_SANDBOX=1 ./build.sh
+```
+
+> Inference auth is handled by NemoClaw's managed proxy, not an API key in the config (the
+> provider `apiKey` is intentionally `"unused"`). Changing inference after a first build needs
+> `REBUILD_SANDBOX=1` (Stage 1 is cached by tag).
+
 ## Run
 
 ```bash

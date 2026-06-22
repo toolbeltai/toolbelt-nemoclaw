@@ -49,8 +49,20 @@ build_sandbox() {
     echo ">> Stage 1: using NemoClaw checkout at $src"
   fi
 
+  # Inference config is baked into openclaw.json during Stage 1 (NemoClaw's build),
+  # NOT read at runtime. Forward any inference vars the caller set; unset ones fall
+  # back to NemoClaw's own Dockerfile defaults (so we never duplicate/drift them).
+  # Changing inference after a build requires REBUILD_SANDBOX=1 (or a new tag).
+  local inf_args=()
+  local v
+  for v in NEMOCLAW_INFERENCE_BASE_URL NEMOCLAW_MODEL NEMOCLAW_PRIMARY_MODEL_REF \
+           NEMOCLAW_PROVIDER_KEY NEMOCLAW_INFERENCE_API NEMOCLAW_CONTEXT_WINDOW \
+           NEMOCLAW_MAX_TOKENS NEMOCLAW_REASONING; do
+    [ -n "${!v:-}" ] && inf_args+=(--build-arg "$v=${!v}")
+  done
+
   echo ">> Stage 1: building $NEMOCLAW_SANDBOX_TAG from NemoClaw source (FROM public sandbox-base)"
-  DOCKER_BUILDKIT=1 docker build -t "$NEMOCLAW_SANDBOX_TAG" -f "$src/Dockerfile" "$src"
+  DOCKER_BUILDKIT=1 docker build "${inf_args[@]}" -t "$NEMOCLAW_SANDBOX_TAG" -f "$src/Dockerfile" "$src"
 
   [ "$cleanup" = "1" ] && rm -rf "$src"
 }
