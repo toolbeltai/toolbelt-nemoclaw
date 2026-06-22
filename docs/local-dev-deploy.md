@@ -16,7 +16,7 @@ It is a **hybrid** install, not a single container:
   entry and skills live here.
 
 The CLI is the control plane on your host; the agent is the isolated container it manages. Run the
-quickstart **directly on the host** — do NOT run the CLI inside a container (that forces
+quickstart **directly on the host**. Do NOT run the CLI inside a container (that forces
 Docker-in-Docker and is only relevant to a headless/k8s packaging).
 
 ## Prerequisites (one-time)
