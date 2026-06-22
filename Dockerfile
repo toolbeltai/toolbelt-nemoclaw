@@ -48,5 +48,9 @@ ENV TOOLBELT_STATE_DIR=/sandbox/.nemoclaw/state/toolbelt
 COPY bin/onboard-and-start.sh /usr/local/bin/onboard-and-start.sh
 RUN chmod +x /usr/local/bin/onboard-and-start.sh
 
+# No default CMD: nemoclaw-start launches the gateway + supervises it ONLY when
+# invoked with no command (an arg sends it down an `exec "$@"` path that never
+# starts the gateway). The shim forwards "$@", so an empty CMD = headless gateway.
+# Override at runtime for a debug shell, e.g. `docker run -it … toolbelt-claw:dev bash`.
 ENTRYPOINT ["/usr/local/bin/onboard-and-start.sh"]
-CMD ["/bin/bash"]
+CMD []
