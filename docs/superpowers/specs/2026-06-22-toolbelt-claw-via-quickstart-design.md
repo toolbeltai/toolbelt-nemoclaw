@@ -55,6 +55,14 @@ NemoClaw exposes the right extension points; Toolbelt decomposes into three conc
    `openclaw.json` (`mcp.servers`) and installs the ClawHub skills into the sandbox skills dir.
    (This is the same effect our baked image produced, achieved through the supported flow.)
 
+   **VERIFIED (2026-06-22):** ran `toolbelt install --client openclaw` (v0.1.5) headless against a
+   stock OpenClaw config. It provisioned anonymous credentials, wrote a nested
+   `mcp.servers.toolbelt = { type:"http", url:"https://mcp.toolbelt.ai/mcp", headers:{Authorization} }`
+   entry, and installed 7 skills (`toolbelt-analyze`, `-entities`, `-find`, `-geo`, `-invite`,
+   `-start`, `-stream` + `assets`) into the skills dir. So the post-onboard CLI path is confirmed as
+   the integration mechanism; no in-blueprint MCP declaration is needed. In the real flow it runs
+   inside the sandbox (via `nemoclaw <name> connect`/exec) so it targets `/sandbox/.openclaw`.
+
 3. **Token.** `toolbelt install` provisions/uses `TOOLBELT_TOKEN` (anonymous onboarding if
    unset; a pre-supplied token for an existing account), persisting it for reuse.
 
