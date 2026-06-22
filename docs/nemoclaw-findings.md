@@ -18,6 +18,29 @@ verifiable from a source is explicitly marked **UNRESOLVED**.
 
 ---
 
+## CORRECTION (post-build, 2026-06-22): there is no pullable runtime `sandbox` image
+
+Empirically verified with `docker pull`:
+
+- `ghcr.io/nvidia/nemoclaw/sandbox:latest` → **`denied`**. There is no published runtime image.
+  The quickstart `curl … nemoclaw.sh | bash` installs the NemoClaw **CLI on the host**, which then
+  builds the `sandbox` image **locally during onboarding** (confirmed in `src/lib/build-context.ts`,
+  `src/lib/sandbox-base-image.ts`, `src/lib/cluster-image-patch.ts`: `docker build` "on the user's
+  machine" from the repo `Dockerfile`).
+- `ghcr.io/nvidia/nemoclaw/sandbox-base:latest` → **public, pulls unauthenticated**. But it lacks
+  `/sandbox/.openclaw/openclaw.json` and `/usr/local/bin/nemoclaw-start` (it has node + npm + the
+  `sandbox` user + an empty skills dir). Those runtime artifacts are added by NemoClaw's own
+  `Dockerfile` when it builds `sandbox` FROM `sandbox-base`.
+
+**Consequence for the wrapper:** there is no image to layer on directly. `build.sh` builds NemoClaw's
+`sandbox` from source (FROM the public `sandbox-base`, pinned `NEMOCLAW_REF`) as Stage 1, then layers
+this wrapper as Stage 2. **This whole pipeline was built and the smoke test passed** (skills present,
+nested `mcp.servers.toolbelt` baked with the placeholder token, both shim paths). The only unverified
+item is the live gateway `/health`, which needs the OpenShell substrate + real inference.
+
+The original "A1 = layer on the published image" option below is therefore infeasible (no published
+image); "A2 = build from source" is the only path, and it works.
+
 ## R1 — Where/how `openclaw.json` is integrity-pinned, and the A2 injection point
 
 **Resolved.**

@@ -6,7 +6,15 @@ binds to a Toolbelt instance at runtime via a token.
 
 ## How it works
 
-The image is a derived build on top of NVIDIA's NemoClaw sandbox. At build time it installs
+NVIDIA does not publish a pullable NemoClaw runtime "sandbox" image; the NemoClaw CLI builds it
+locally on the host during onboarding (only `sandbox-base` is public). So this is a **two-stage
+build**, orchestrated by `build.sh`:
+
+1. **Stage 1:** build NemoClaw's `sandbox` from NemoClaw source at a pinned commit, on top of the
+   public `ghcr.io/nvidia/nemoclaw/sandbox-base`.
+2. **Stage 2:** layer this wrapper on top of that image.
+
+At build time the wrapper installs
 `@toolbeltai/cli` and the Toolbelt skills, and bakes an `mcp.servers.toolbelt` entry into
 OpenClaw's config whose auth header is the NemoClaw placeholder
 `Bearer openshell:resolve:env:TOOLBELT_TOKEN` (so the literal token never lands on disk). A
@@ -21,7 +29,7 @@ to NemoClaw's entrypoint:
 ## Build
 
 ```bash
-./build.sh                       # uses defaults
+./build.sh                       # builds Stage 1 (cached after first run) + Stage 2
 IMAGE_TAG=toolbelt-claw:0.1.0 \
 TOOLBELT_SKILLS_VERSION=1.0.12 \
 TOOLBELT_CLI_VERSION=0.1.6 \
@@ -29,15 +37,21 @@ TOOLBELT_MCP_URL=https://mcp.toolbelt.ai/mcp \
 ./build.sh
 ```
 
-| Build ARG | Purpose | Default |
+The first run clones NemoClaw and builds the `sandbox` image (a few minutes); later runs reuse it.
+
+| Env var | Purpose | Default |
 |---|---|---|
-| `BASE_IMAGE` | NemoClaw sandbox image | `ghcr.io/nvidia/nemoclaw/sandbox:latest` |
+| `NEMOCLAW_REF` | NemoClaw commit to build Stage 1 from | pinned (see `docs/nemoclaw-findings.md`) |
+| `NEMOCLAW_SANDBOX_TAG` | tag for the Stage 1 sandbox image | `nemoclaw-sandbox:local` |
+| `NEMOCLAW_SRC` | path to an existing NemoClaw checkout (skips clone) | _(clone)_ |
+| `REBUILD_SANDBOX` | `1` to rebuild Stage 1 even if the tag exists | `0` |
+| `BASE_IMAGE` | prebuilt sandbox image to layer on; **skips Stage 1** if set | _(Stage 1 output)_ |
 | `TOOLBELT_SKILLS_VERSION` | `@toolbeltai/skills` version (floating) | `latest` |
 | `TOOLBELT_CLI_VERSION` | `@toolbeltai/cli` version (onboarding delegate) | `latest` |
 | `TOOLBELT_MCP_URL` | MCP endpoint baked into the config | `https://mcp.toolbelt.ai/mcp` |
 
-> Pulling `ghcr.io/nvidia/nemoclaw/sandbox` may require GHCR authentication for the
-> nvidia/nemoclaw org.
+> Stage 1 builds unauthenticated against the public `sandbox-base`. Set `BASE_IMAGE` only if you
+> already have a built (or authenticated) NemoClaw `sandbox` image and want to skip Stage 1.
 
 ## Run
 
@@ -70,9 +84,10 @@ Kubernetes this is handled by the deployment spec (out of scope here).
 ## Tests
 
 - `bash test/shim_test.sh`: shim token-resolution and url-override logic (no Docker needed).
-- `bash test/smoke.sh`: builds the image and verifies structure plus onboarding paths (needs
-  Docker and base-image pull access). `SMOKE_RUNTIME=1 bash test/smoke.sh` adds a real gateway
-  integrity and health check (needs the NemoClaw runtime substrate).
+- `bash test/smoke.sh`: runs the two-stage build and verifies structure plus onboarding paths
+  (needs Docker; Stage 1 pulls the public `sandbox-base`). Verified passing. `SMOKE_RUNTIME=1 bash
+  test/smoke.sh` adds a real gateway health check, which requires the full NemoClaw runtime
+  substrate (OpenShell sandbox plus real inference) and will not pass under plain Docker.
 
 ## Design
 

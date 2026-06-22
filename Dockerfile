@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
-# Confirm the exact published runtime image tag; fall back to building from source
-# at the pinned SHA (docs/nemoclaw-findings.md) if no published runtime image exists.
-ARG BASE_IMAGE=ghcr.io/nvidia/nemoclaw/sandbox:latest
+# NemoClaw publishes no pullable runtime "sandbox" image, so build.sh produces one
+# from NemoClaw source (FROM the public sandbox-base) and passes its tag as BASE_IMAGE.
+# The default matches build.sh's Stage 1 output. Override to use a prebuilt sandbox.
+ARG BASE_IMAGE=nemoclaw-sandbox:local
 FROM ${BASE_IMAGE}
 
 ARG TOOLBELT_SKILLS_VERSION=latest
