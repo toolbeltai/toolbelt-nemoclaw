@@ -26,29 +26,49 @@ Docker-in-Docker and is only relevant to a headless/k8s packaging).
 2. **Host tools:** `lsof` and `strings`.
    - macOS: both already present (allocate RAM in Docker Desktop settings).
    - Debian/Ubuntu: `sudo apt-get install -y lsof binutils`
-3. An inference provider. This runbook uses **Anthropic + Claude Haiku** (cheap, fast). You need an
-   Anthropic API key with a **non-zero credit balance** (a $0 balance fails provider validation
-   with HTTP 400).
+3. An inference provider. Selection is **provider-agnostic** (see "Choosing a provider" below). The
+   examples here use **Anthropic + Claude Haiku** (cheap, fast); that key needs a **non-zero credit
+   balance** (a $0 balance fails provider validation with HTTP 400).
+
+### Choosing a provider
+
+NemoClaw selects the inference backend from three env vars, so you never edit a brand-specific key
+name to switch providers:
+
+| Var | Purpose |
+|---|---|
+| `NEMOCLAW_PROVIDER` | which backend: `anthropic`, `openai`, `gemini`, `build` (NVIDIA), `nim`, `ollama`, `vllm`, `custom` (any OpenAI-compatible endpoint), `anthropiccompatible` |
+| `NEMOCLAW_MODEL` | model id for that provider (e.g. `claude-haiku-4-5`, `gpt-5.4`, `meta/llama-3.3-70b-instruct`) |
+| `NEMOCLAW_PROVIDER_KEY` | the API key. This is a **universal alias**: NemoClaw applies it to whichever provider you select, so the brand-specific vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...) are not required. (Those still work if you prefer them; `NEMOCLAW_PROVIDER_KEY` only fills in when the specific one is unset.) Local providers `ollama`/`vllm` need no key. |
+
+For a `custom` / `anthropiccompatible` endpoint also set `NEMOCLAW_ENDPOINT_URL`
+(e.g. `https://openrouter.ai/api/v1`) and optionally `NEMOCLAW_PREFERRED_API`
+(`openai-completions`, the default, or `chat-completions`).
 
 ## Step 1: Install and onboard
 
 **Interactive (simplest locally):**
 ```bash
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
-# In the wizard: choose Anthropic, paste your key, pick model claude-haiku-4-5.
+# In the wizard: choose your provider, paste your key, pick a model.
 ```
 
-**Non-interactive (scriptable):**
+**Non-interactive (scriptable):** set the three provider vars and onboard. To switch providers,
+change only these values, not the variable names:
 ```bash
 curl -fsSL https://www.nvidia.com/nemoclaw.sh | \
   NEMOCLAW_NON_INTERACTIVE=1 \
   NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
   NEMOCLAW_PROVIDER=anthropic \
-  ANTHROPIC_API_KEY="$(cat ~/.anthropic_key)" \
   NEMOCLAW_MODEL=claude-haiku-4-5 \
+  NEMOCLAW_PROVIDER_KEY="$(cat ~/.provider_key)" \
   NEMOCLAW_SANDBOX_NAME=toolbelt \
   bash -s -- --non-interactive
 ```
+
+Switching to, say, OpenAI is just `NEMOCLAW_PROVIDER=openai NEMOCLAW_MODEL=gpt-5.4` with the same
+`NEMOCLAW_PROVIDER_KEY`. For an OpenAI-compatible endpoint, add `NEMOCLAW_PROVIDER=custom` and
+`NEMOCLAW_ENDPOINT_URL=https://your-endpoint/v1`. Local providers (`ollama`, `vllm`) omit the key.
 
 What happens (the 8 onboarding steps): preflight checks, start the OpenShell gateway, validate the
 provider against the live endpoint, set the inference route, build the sandbox image, create and

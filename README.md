@@ -48,7 +48,9 @@ the k8s shape is:
   `toolbelt` preset/blueprint.
 - **Pod (runtime):** privileged / DinD-capable; an entrypoint runs `nemoclaw onboard
   --non-interactive`, the gateway builds + starts the sandbox, then `toolbelt install --client
-  openclaw` runs inside it. `TOOLBELT_TOKEN` from a Secret.
+  openclaw` runs inside it. Provider is selected via `NEMOCLAW_PROVIDER` / `NEMOCLAW_MODEL` /
+  `NEMOCLAW_PROVIDER_KEY` (provider-agnostic; see `.env.example`); `NEMOCLAW_PROVIDER_KEY` and
+  `TOOLBELT_TOKEN` from a Secret.
 
 This image + entrypoint is not built yet; the host-dev runbook is the validated path today.
 
