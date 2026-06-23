@@ -111,6 +111,16 @@ This provisions a Toolbelt token (anonymous unless `TOOLBELT_TOKEN` is set), wri
 `mcp.servers.toolbelt` entry (`https://mcp.toolbelt.ai/mcp`) into the agent's `openclaw.json`, and
 installs the Toolbelt skill.
 
+> **If provisioning fails with `✗ fetch failed`:** the egress preset applied in Step 2 may not have
+> taken effect on the live sandbox yet — the gateway needs to reload the policy. Recover the gateway
+> from the host, then retry the install:
+> ```bash
+> nemoclaw toolbelt recover          # restart/recover the "toolbelt" sandbox gateway
+> ```
+> `fetch failed` (no HTTP status) means the connection was blocked by the network-policy allowlist,
+> not an API error. The CLI provisions against `https://app.toolbelt.ai`, which the Step 2 preset
+> allowlists; recovering reloads that policy.
+
 ## Step 4: Use it
 
 ```bash
