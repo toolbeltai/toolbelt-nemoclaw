@@ -45,6 +45,18 @@ For a `custom` / `anthropiccompatible` endpoint also set `NEMOCLAW_ENDPOINT_URL`
 (e.g. `https://openrouter.ai/api/v1`) and optionally `NEMOCLAW_PREFERRED_API`
 (`openai-completions`, the default, or `chat-completions`).
 
+## One command (recommended)
+
+`provision.sh` chains all four steps below (install + onboard, apply egress preset, install Toolbelt
+in the sandbox, recover the gateway), reading config from `.env`:
+```bash
+cp .env.example .env        # then fill in NEMOCLAW_PROVIDER / NEMOCLAW_MODEL / NEMOCLAW_PROVIDER_KEY
+./provision.sh
+# already onboarded? do only steps 2-4:
+SKIP_ONBOARD=1 ./provision.sh
+```
+The steps below document what it does (and the manual path if you want to run them one at a time).
+
 ## Step 1: Install and onboard
 
 **Interactive (simplest locally):**

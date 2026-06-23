@@ -90,8 +90,10 @@ Not a custom image we maintain. Instead:
 
 - A **`toolbelt` egress preset** we own: `policy/toolbelt-egress.yaml` (version-controlled), applied
   with `nemoclaw sandbox policy add <name> --from-file …`. No blueprint, no fork.
-- A **thin provisioning script** that runs the official quickstart non-interactively, applies the
-  egress preset, then runs `toolbelt install --client openclaw` against the sandbox.
+- A **thin provisioning script** (`provision.sh`, built) that runs the official quickstart
+  non-interactively, applies the egress preset, runs `toolbelt install --client openclaw` against the
+  sandbox via `nemoclaw sandbox exec`, then `nemoclaw sandbox recover` to reload. Reads config from
+  `.env`; `SKIP_ONBOARD=1` for steps 2-4 only.
 - Documentation of the required host prereqs (`lsof`, `binutils`, Docker) and the env contract
   (`NEMOCLAW_PROVIDER` / `NEMOCLAW_MODEL` / `NEMOCLAW_PROVIDER_KEY`, `TOOLBELT_TOKEN`). The stock
   blueprint is used as-is; egress is added post-onboard, not via `NEMOCLAW_POLICY_PRESETS` /
