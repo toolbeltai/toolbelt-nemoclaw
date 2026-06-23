@@ -141,6 +141,24 @@ nemoclaw toolbelt recover          # restart the "toolbelt" sandbox so OpenClaw 
 openclaw tui                       # or reconnect: nemoclaw toolbelt connect
 ```
 
+## Demo: two users, one shared brain
+
+`demo-shared-brain.sh` stands up two separate, sandboxed agents that collaborate through one shared
+Toolbelt namespace, with no agent-to-agent connection. It provisions two distinct anonymous users,
+has the first share its namespace (read-write) with the second, then runs `provision.sh` once per
+role. Config (Nemotron/NVIDIA provider, role names) comes from `.env.demo`:
+```bash
+cp .env.demo .env.demo.local && $EDITOR .env.demo.local   # set NEMOCLAW_PROVIDER_KEY, confirm model
+DEMO_ENV_FILE=./.env.demo.local ./demo-shared-brain.sh
+# users + share only (run the two provision.sh yourself):
+PROVISION_SANDBOXES=0 ./demo-shared-brain.sh
+```
+The shared namespace is the brain: one agent writes to the timeline / entity graph, the other reads
+it. The Toolbelt user-provisioning and sharing HTTP flow is verified against source; running **two**
+NemoClaw sandboxes by name from one host is the one piece to confirm on first run (there is no
+`sandbox create`; onboarding creates-or-reuses by `NEMOCLAW_SANDBOX_NAME`). Also confirm the chosen
+Nemotron model supports tool-calling, or the MCP server cannot be used.
+
 ## Caveat to handle
 
 **Skill version drift.** Older `@toolbeltai/cli` (0.1.6) pinned `@toolbeltai/skills` at `^0.2.0`,
