@@ -99,9 +99,10 @@ Not a custom image we maintain. Instead:
 ## Disposition of the baked-image work
 
 The two-stage build (`Dockerfile`, `build.sh`, `bin/onboard-and-start.sh`, `config/`,
-`test/`) is **superseded as the primary approach** but kept in-tree as reference: it is verified
-to build and its inference-arg wiring and findings docs informed this design. Mark it clearly as
-superseded; do not invest further in running it bare.
+`test/`) has been **removed** as superseded. Its inference-arg wiring and the findings it produced
+informed this design and are preserved in `docs/nemoclaw-findings.md` and
+`docs/nemoclaw-substrate-findings.md`. The superseded design (`2026-06-19-...-wrapper-design.md`)
+and plan are retained as the historical design trail.
 
 ## Source-of-truth findings
 

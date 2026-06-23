@@ -117,8 +117,9 @@ box during the first deploy:
 ## Background (why not the custom image)
 
 An earlier approach built a custom two-stage image baking Toolbelt into a NemoClaw sandbox
-(`Dockerfile`, `build.sh`, `bin/onboard-and-start.sh`). It is **superseded**: NemoClaw publishes no
+(a `Dockerfile`, `build.sh`, and a pre-launch shim). It is **superseded**: NemoClaw publishes no
 pullable runtime image, and the sandbox gateway will not run healthy outside the OpenShell substrate.
-Those files remain as verified reference only. Use this quickstart-based runbook for deploys. See
+Those files have been removed; the verified findings that informed the decision are preserved in the
+docs. Use this quickstart-based runbook for deploys. See
 `docs/superpowers/specs/2026-06-22-toolbelt-claw-via-quickstart-design.md` and
 `docs/nemoclaw-substrate-findings.md`.
