@@ -23,11 +23,27 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EGRESS_PRESET="$REPO/policy/toolbelt-egress.yaml"
 
 # --- Load config -----------------------------------------------------------
+# Load .env WITHOUT clobbering vars already set in the environment, so an inline
+# override wins, e.g.  NEMOCLAW_SANDBOX_NAME=scheduler ./provision.sh
+# (lets you stand up multiple sandboxes from one .env). Precedence: inline env > .env.
 if [ -f "$REPO/.env" ]; then
-  set -a; . "$REPO/.env"; set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line#export }                        # tolerate a leading `export `
+    case "$line" in ''|\#*) continue ;; esac    # skip blanks and comments
+    key=${line%%=*}; key=${key// /}             # key = text before first =, no spaces
+    case "$line" in *=*) ;; *) continue ;; esac # skip lines without =
+    case "$key" in ''|*[!A-Za-z0-9_]*) continue ;; esac  # valid identifier only
+    [ -n "${!key+x}" ] && continue              # already set in env -> inline wins
+    val=${line#*=}
+    case "$val" in                              # strip one layer of surrounding quotes
+      \"*\") val=${val#\"}; val=${val%\"} ;;
+      \'*\') val=${val#\'}; val=${val%\'} ;;
+    esac
+    export "$key=$val"
+  done < "$REPO/.env"
 fi
 
-# Sensible non-interactive defaults; .env values win.
+# Sensible non-interactive defaults; .env / inline env win.
 : "${NEMOCLAW_NON_INTERACTIVE:=1}"
 : "${NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE:=1}"
 : "${NEMOCLAW_SANDBOX_NAME:=toolbelt}"
