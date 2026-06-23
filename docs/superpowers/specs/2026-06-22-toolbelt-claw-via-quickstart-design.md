@@ -42,11 +42,19 @@ a deployment-config concern, not an approach problem.
 
 NemoClaw exposes the right extension points; Toolbelt decomposes into three concerns:
 
-1. **Egress allowance (preset).** The sandbox network policy is an allowlist of named groups
-   (`policies/presets/*.yaml`), each granting specific hosts, selected at onboard via
-   `NEMOCLAW_POLICY_PRESETS`. `clawhub.ai` egress is **already permitted** in the base policy for
-   skill flows. We add a **`toolbelt` preset** granting egress to the Toolbelt MCP host
-   (e.g. `mcp.toolbelt.ai`), supplied through a custom blueprint via `NEMOCLAW_BLUEPRINT_PATH`.
+1. **Egress allowance (preset).** The sandbox network policy is an allowlist. `clawhub.ai` egress is
+   **already permitted** in the stock base policy for skill flows, but the live MCP host is not.
+   We ship our own **`toolbelt` egress preset** (`policy/toolbelt-egress.yaml`, version-controlled
+   in this repo) granting egress to `toolbelt.ai` and `mcp.toolbelt.ai:443`, and apply it
+   post-onboard with `nemoclaw sandbox policy add <name> --from-file ./policy/toolbelt-egress.yaml`.
+
+   **VERIFIED (2026-06-23, git-tracked upstream):** `nemoclaw sandbox policy add … --from-file`
+   (`src/commands/sandbox/policy/add.ts`) applies a custom preset to a running sandbox and merges its
+   `network_policies` by name onto the live policy (`src/lib/policy/index.ts`). This is the
+   reproducible path. Two rejected alternatives: `NEMOCLAW_POLICY_PRESETS` selects only **built-in**
+   presets (can't add custom hosts), and a custom `NEMOCLAW_BLUEPRINT_PATH` **fully replaces** the
+   default blueprint (a full fork to maintain — avoided). Note: a `toolbelt.yaml` in the local
+   `~/.nemoclaw` checkout is the user's untracked local file, **not** upstream; it is not relied on.
 
 2. **MCP server registration + skills install.** A preset only handles egress; the OpenClaw
    `mcp.servers.toolbelt` entry and the skills are installed by the **Toolbelt CLI**
@@ -66,25 +74,28 @@ NemoClaw exposes the right extension points; Toolbelt decomposes into three conc
 3. **Token.** `toolbelt install` provisions/uses `TOOLBELT_TOKEN` (anonymous onboarding if
    unset; a pre-supplied token for an existing account), persisting it for reuse.
 
+> **Resolved (2026-06-23):** Egress and MCP entry both use the lightweight, reproducible path, not a
+> blueprint. Egress = our own preset applied via `policy add --from-file`; MCP entry/skill =
+> post-onboard `toolbelt install`. A custom blueprint was rejected: it fully replaces the default
+> (fork to maintain) and cannot declare `mcp.servers` directly anyway (only via `model-specific-setup`
+> manifests inside such a fork). Hosts to allowlist: `toolbelt.ai`, `mcp.toolbelt.ai:443`.
+>
 > **Open implementation items:**
-> - Confirm whether the MCP entry/skills are better delivered via a custom blueprint
->   (declarative, baked at sandbox build) or post-onboard `nemoclaw <sandbox> connect` +
->   `toolbelt install`. The blueprint route is more reproducible/k8s-friendly; the connect route
->   is simpler to start. Verify the preset schema can also carry an openclaw-plugin/config so the
->   MCP entry can be declared in-blueprint rather than installed after.
-> - Confirm the exact Toolbelt MCP host(s) to allowlist in the preset.
+> - The exact non-interactive in-sandbox form of `toolbelt install` (a `nemoclaw <name> exec`-style
+>   one-shot vs. an interactive `connect` shell) — needed to script the entrypoint.
 
 ## Deliverable (reframed, much lighter)
 
 Not a custom image we maintain. Instead:
 
-- A **`toolbelt` blueprint overlay** (a `presets/toolbelt.yaml` plus any MCP/plugin config),
-  pointed to by `NEMOCLAW_BLUEPRINT_PATH`.
-- A **thin provisioning script** that runs the official quickstart non-interactively with the
-  Toolbelt preset selected, then runs `toolbelt install --client openclaw` against the sandbox.
+- A **`toolbelt` egress preset** we own: `policy/toolbelt-egress.yaml` (version-controlled), applied
+  with `nemoclaw sandbox policy add <name> --from-file …`. No blueprint, no fork.
+- A **thin provisioning script** that runs the official quickstart non-interactively, applies the
+  egress preset, then runs `toolbelt install --client openclaw` against the sandbox.
 - Documentation of the required host prereqs (`lsof`, `binutils`, Docker) and the env contract
-  (`NEMOCLAW_PROVIDER` + inference vars, `NEMOCLAW_POLICY_PRESETS=toolbelt`,
-  `NEMOCLAW_BLUEPRINT_PATH`, `TOOLBELT_TOKEN`).
+  (`NEMOCLAW_PROVIDER` / `NEMOCLAW_MODEL` / `NEMOCLAW_PROVIDER_KEY`, `TOOLBELT_TOKEN`). The stock
+  blueprint is used as-is; egress is added post-onboard, not via `NEMOCLAW_POLICY_PRESETS` /
+  `NEMOCLAW_BLUEPRINT_PATH`.
 
 ## Deployment model
 

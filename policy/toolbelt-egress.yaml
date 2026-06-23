@@ -1,0 +1,43 @@
+# Toolbelt egress allowlist for a NemoClaw/OpenClaw sandbox.
+#
+# Apply to a running sandbox (post-onboard), no blueprint fork required:
+#   nemoclaw sandbox policy add <sandbox-name> --from-file ./policy/toolbelt-egress.yaml --yes
+#
+# The loader strips this `preset:` header and merges the `network_policies:`
+# entries by name onto the sandbox's live policy. ClawHub egress is already in the
+# stock base policy, so this only adds what the base policy lacks: the Toolbelt API
+# and the live MCP endpoint.
+#
+# Do NOT drop this into ~/.nemoclaw/.../policies/presets/ — that only works on a
+# mutated local checkout and is not reproducible. This file is the version-controlled
+# source of truth; apply it with `policy add --from-file`.
+preset:
+  name: toolbelt
+  description: "Toolbelt API + live MCP endpoint egress"
+network_policies:
+  toolbelt:
+    name: toolbelt
+    endpoints:
+      - host: toolbelt.ai
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+          - allow: { method: POST, path: "/**" }
+    binaries:
+      - { path: /usr/bin/curl }
+
+  toolbelt-mcp:
+    name: toolbelt-mcp
+    endpoints:
+      - host: mcp.toolbelt.ai
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /usr/local/bin/openclaw }
+      - { path: /usr/local/bin/node }

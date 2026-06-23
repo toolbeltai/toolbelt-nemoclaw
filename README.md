@@ -19,8 +19,9 @@ The install is a **hybrid**, not a single container:
 
 Toolbelt plugs in through three concerns:
 
-1. **Egress** — a `toolbelt` network-policy preset allowlisting the Toolbelt MCP host
-   (`mcp.toolbelt.ai`), selected at onboard via `NEMOCLAW_POLICY_PRESETS`.
+1. **Egress** — our own `toolbelt` network-policy preset (`policy/toolbelt-egress.yaml`)
+   allowlisting `mcp.toolbelt.ai`, applied post-onboard with `nemoclaw sandbox policy add
+   --from-file`. No blueprint fork.
 2. **MCP + skill** — `toolbelt install --client openclaw`, run **inside the sandbox**, writes the
    nested `mcp.servers.toolbelt` entry into the agent's `openclaw.json` and installs the Toolbelt
    skill.
@@ -45,10 +46,11 @@ sandbox container, because the gateway builds and runs it through a Docker daemo
 the k8s shape is:
 
 - **Image (build time):** base + Docker CLI + Node + `nemoclaw` CLI + OpenShell substrate +
-  `toolbelt` preset/blueprint.
+  `policy/toolbelt-egress.yaml`.
 - **Pod (runtime):** privileged / DinD-capable; an entrypoint runs `nemoclaw onboard
-  --non-interactive`, the gateway builds + starts the sandbox, then `toolbelt install --client
-  openclaw` runs inside it. Provider is selected via `NEMOCLAW_PROVIDER` / `NEMOCLAW_MODEL` /
+  --non-interactive`, the gateway builds + starts the sandbox, then applies the egress preset
+  (`nemoclaw sandbox policy add … --from-file`) and runs `toolbelt install --client openclaw`
+  inside it. Provider is selected via `NEMOCLAW_PROVIDER` / `NEMOCLAW_MODEL` /
   `NEMOCLAW_PROVIDER_KEY` (provider-agnostic; see `.env.example`); `NEMOCLAW_PROVIDER_KEY` and
   `TOOLBELT_TOKEN` from a Secret.
 

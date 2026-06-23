@@ -83,7 +83,22 @@ later runs reuse the Docker layer cache and are fast.
 - Third-party notice in non-interactive mode -> include
   `NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1` (or `--yes-i-accept-third-party-software`).
 
-## Step 2: Add Toolbelt (inside the sandbox)
+## Step 2: Allow Toolbelt egress (on the host)
+
+The sandbox network policy is an allowlist. ClawHub is already permitted by the stock base policy
+(so skill installs work), but the agent's **live** MCP calls to `mcp.toolbelt.ai` are blocked until
+that host is allowlisted. Apply our version-controlled egress preset to the running sandbox; this
+does **not** require forking NemoClaw's blueprint:
+```bash
+nemoclaw sandbox policy add toolbelt --from-file ./policy/toolbelt-egress.yaml --yes
+# (use --dry-run first to preview the merged policy)
+```
+NemoClaw merges the preset's `network_policies` entries onto the sandbox's live policy by name.
+The preset is `policy/toolbelt-egress.yaml` in this repo (the source of truth) — do not hand-drop a
+preset into the local NemoClaw checkout, which only works on a mutated checkout and is not
+reproducible.
+
+## Step 3: Install Toolbelt (inside the sandbox)
 
 The agent reads `/sandbox/.openclaw/openclaw.json` inside the sandbox, so Toolbelt must be installed
 **in the sandbox**, not on the host:
@@ -94,26 +109,22 @@ npx -y @toolbeltai/cli@latest install --client openclaw
 ```
 This provisions a Toolbelt token (anonymous unless `TOOLBELT_TOKEN` is set), writes a nested
 `mcp.servers.toolbelt` entry (`https://mcp.toolbelt.ai/mcp`) into the agent's `openclaw.json`, and
-installs the Toolbelt skills.
+installs the Toolbelt skill.
 
-## Step 3: Use it
+## Step 4: Use it
 
 ```bash
 openclaw tui                       # or reconnect: nemoclaw toolbelt connect
 ```
 
-## Two caveats to handle
+## Caveat to handle
 
-1. **Live MCP egress.** The sandbox network policy is an allowlist. ClawHub is already permitted
-   (so the install + skills work), but the agent's **live** MCP calls to `mcp.toolbelt.ai` are
-   blocked until that host is allowlisted via a `toolbelt` blueprint **preset** (selected with
-   `NEMOCLAW_POLICY_PRESETS=toolbelt`, supplied via `NEMOCLAW_BLUEPRINT_PATH`). Without it, the
-   agent runs but cannot reach Toolbelt at runtime.
-2. **Skills version drift.** `@toolbeltai/cli@0.1.6` pins `@toolbeltai/skills` at `^0.2.0`, which
-   resolves to `0.2.5` and installs the **old 7 skills**, not the consolidated single `toolbelt`
-   skill (which ships in `@toolbeltai/skills` 1.x, latest `1.0.12`). A `^0.2.0` range cannot cross
-   to 1.x. **Fix:** bump the CLI's dependency to `^1.0.0` and republish `@toolbeltai/cli`; then
-   `toolbelt install` installs just `toolbelt`.
+**Skill version drift.** Older `@toolbeltai/cli` (0.1.6) pinned `@toolbeltai/skills` at `^0.2.0`,
+which resolves to `0.2.x` and installs the **old 7 skills**, not the consolidated single `toolbelt`
+skill (which ships in `@toolbeltai/skills` 1.x). The CLI dependency is now `^1.0.0` on `main`;
+the republish is pending the `@toolbeltai/cli` 0.1.7 release. Until that publishes, pin a known-good
+version explicitly (`npx -y @toolbeltai/cli@0.1.7 ...` once released) so `toolbelt install` installs
+just the `toolbelt` skill.
 
 ## Build-speed tips (local iteration)
 
@@ -131,7 +142,9 @@ These were not exercisable in the constrained test environment and should be con
 box during the first deploy:
 - The exact in-sandbox command to run `toolbelt install` (shell via `nemoclaw <name> connect`
   vs. a one-shot exec subcommand).
-- The `toolbelt` egress preset contents (host + ports for `mcp.toolbelt.ai`).
+- That `nemoclaw sandbox policy add <name> --from-file ./policy/toolbelt-egress.yaml` merges cleanly
+  and the agent then reaches `mcp.toolbelt.ai` at runtime (the preset format is verified against
+  upstream; the live apply + reachability is what to confirm).
 - An end-to-end agent turn through Haiku that calls a Toolbelt tool.
 
 ## Background (why not the custom image)
