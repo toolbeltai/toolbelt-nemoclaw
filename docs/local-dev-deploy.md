@@ -109,17 +109,19 @@ npx -y @toolbeltai/cli@latest install --client openclaw
 ```
 This provisions a Toolbelt token (anonymous unless `TOOLBELT_TOKEN` is set), writes a nested
 `mcp.servers.toolbelt` entry (`https://mcp.toolbelt.ai/mcp`) into the agent's `openclaw.json`, and
-installs the Toolbelt skill.
+installs the consolidated `toolbelt` skill (the CLI reports `Installed 1 skills`).
 
-> **If provisioning fails with `✗ fetch failed`:** the egress preset applied in Step 2 may not have
-> taken effect on the live sandbox yet — the gateway needs to reload the policy. Recover the gateway
-> from the host, then retry the install:
-> ```bash
-> nemoclaw toolbelt recover          # restart/recover the "toolbelt" sandbox gateway
-> ```
-> `fetch failed` (no HTTP status) means the connection was blocked by the network-policy allowlist,
-> not an API error. The CLI provisions against `https://app.toolbelt.ai`, which the Step 2 preset
-> allowlists; recovering reloads that policy.
+On success the CLI prints `! Restart OpenClaw to pick up the new MCP server and skills.` This is
+**required** — the running agent won't see the new `mcp.servers.toolbelt` entry or the skill until it
+restarts. Recover the gateway from the host:
+```bash
+nemoclaw toolbelt recover          # restart the "toolbelt" sandbox so OpenClaw reloads config + skills
+```
+
+> **Troubleshooting — provisioning fails with `✗ fetch failed`:** that is a network-policy block
+> (no HTTP status = blocked connection, not an API error), not a restart issue. The CLI provisions
+> against `https://app.toolbelt.ai`; confirm Step 2's egress preset (which allowlists that host) was
+> applied to this sandbox, then retry.
 
 ## Step 4: Use it
 
