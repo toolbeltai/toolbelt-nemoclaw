@@ -140,15 +140,23 @@ STAGE="${TMPDIR:-/tmp}/persona.$$"; mkdir -p "$STAGE"
 for id in main watch exposure comms; do
   [ -f "$REPO/workspaces/$id.md" ] || continue
   if [ "$id" = "main" ]; then dir="/sandbox/.openclaw/workspace"; else dir="/sandbox/.openclaw/workspace-$id"; fi
-  cp "$REPO/workspaces/$id.md" "$STAGE/AGENTS.md"
-  # tar extract refuses to overwrite an existing file; main's workspace ships a stock
-  # AGENTS.md, so remove it first. Specialists' workspace-<id> has no pre-existing AGENTS.md.
   if [ "$id" = "main" ]; then
-    nemoclaw "$SANDBOX" exec --no-tty -- rm -f "$dir/AGENTS.md" || true
+    # main's workspace ships a stock AGENTS.md and `upload` (tar extract) refuses to
+    # overwrite an existing file. A redirect write truncates/overwrites cleanly, so write
+    # the persona via exec, passing the content base64-encoded (single token, no newline
+    # issues). The agent data dir is writable via exec and the edit survives `recover`.
+    b64="$(base64 < "$REPO/workspaces/$id.md" | tr -d '\n')"
+    nemoclaw "$SANDBOX" exec --no-tty -- sh -c "printf %s '$b64' | base64 -d > '$dir/AGENTS.md'" \
+      && log "  persona -> $dir/AGENTS.md ($id, via exec write)" \
+      || echo "  (write $id persona to $dir failed)"
+  else
+    # Specialists' workspace-<id> has no pre-existing AGENTS.md, so a direct upload is fine.
+    # `upload <src> <dir>` drops <src> into <dir> by basename, so stage the file as AGENTS.md.
+    cp "$REPO/workspaces/$id.md" "$STAGE/AGENTS.md"
+    nemoclaw "$SANDBOX" upload "$STAGE/AGENTS.md" "$dir" \
+      && log "  persona -> $dir/AGENTS.md ($id)" \
+      || echo "  (upload $id persona to $dir failed — verify workspace path for your OpenClaw version)"
   fi
-  nemoclaw "$SANDBOX" upload "$STAGE/AGENTS.md" "$dir" \
-    && log "  persona -> $dir/AGENTS.md ($id)" \
-    || echo "  (upload $id persona to $dir failed — verify workspace path for your OpenClaw version)"
 done
 rm -rf "$STAGE"
 nemoclaw "$SANDBOX" recover
