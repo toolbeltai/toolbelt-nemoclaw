@@ -20,10 +20,12 @@
 #
 # VERIFIED against tracked source: the onboard + user-share + accept HTTP contract
 # (atlas onboarding/index.ts, namespace/index.ts) and that supplying TOOLBELT_TOKEN makes
-# `toolbelt install` bind to an existing user. NOT yet exercised live: running two NemoClaw
-# sandboxes by name from one host (onboard creates-or-reuses by NEMOCLAW_SANDBOX_NAME; there
-# is no separate `sandbox create`). If your host supports only one sandbox, run each role on
-# its own host/VM with PROVISION_SANDBOXES=0 here.
+# `toolbelt install` bind to an existing user. Two sandboxes on one host is supported per
+# NVIDIA's docs ("Multiple sandboxes can coexist on the same host"; each onboard registers a
+# new sandbox with its own dashboard port 18789-18799 -- there is no separate `sandbox create`):
+# https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/manage-sandboxes/lifecycle
+# Still unexercised end to end: the runtime coordination beat (both agents targeting the shared
+# namespace) and Nemotron tool-calling. Use PROVISION_SANDBOXES=0 to run each role on its own host.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

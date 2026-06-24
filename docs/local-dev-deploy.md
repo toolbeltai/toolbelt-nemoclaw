@@ -154,10 +154,13 @@ DEMO_ENV_FILE=./.env.demo.local ./demo-shared-brain.sh
 PROVISION_SANDBOXES=0 ./demo-shared-brain.sh
 ```
 The shared namespace is the brain: one agent writes to the timeline / entity graph, the other reads
-it. The Toolbelt user-provisioning and sharing HTTP flow is verified against source; running **two**
-NemoClaw sandboxes by name from one host is the one piece to confirm on first run (there is no
-`sandbox create`; onboarding creates-or-reuses by `NEMOCLAW_SANDBOX_NAME`). Also confirm the chosen
-Nemotron model supports tool-calling, or the MCP server cannot be used.
+it. The Toolbelt user-provisioning and sharing HTTP flow is verified against source (and run live).
+Running **two** sandboxes on one host is supported per NVIDIA's docs ("Multiple sandboxes can coexist
+on the same host"; each `onboard` registers a new sandbox with its own dashboard port 18789-18799 —
+there is no separate `sandbox create`):
+<https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/manage-sandboxes/lifecycle>. Still
+unexercised end to end: the runtime coordination (both agents pointed at the shared namespace) and
+that the chosen Nemotron model supports tool-calling — without it the MCP server cannot be used.
 
 ## Caveat to handle
 
