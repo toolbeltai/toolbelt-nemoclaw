@@ -72,9 +72,21 @@ OpenClaw re-creates it non-idempotently) was wrong: both mkdirs are idempotent.
 
 WHAT'S ACTUALLY NEEDED NEXT: capture the REAL openclaw error/stack from a spawn turn (not the model's
 summary) before filing anything upstream. A bug report about "non-idempotent mkdir" would be incorrect.
-NOTE: the in-sandbox `exec`/gateway becomes unreliable (calls hang at 0 output) after a handful of
-agent turns in one session; a fresh `destroy` + onboard restores it. That flakiness, not the demo
-logic, blocked live confirmation.
+
+LIVE REPRO 2026-06-24 (fresh onboard, then a DIRECT `nemoclaw <sb> agent --agent watch -m ...` turn):
+the watch agent runtime initialized CLEANLY (NemoClaw plugin registered, NVIDIA endpoint wired, tool
+policy applied) with NO EEXIST and NO error in `gateway-persistent.log` (only a benign mDNS guard
+warning). But the turn then produced 0 bytes of output for ~40 min while the gateway stayed fully
+responsive to `exec` (instant). I.e. the agent turn HUNG — it never streamed a result — even though
+the gateway was alive and healthy. Killed it manually. So:
+  - The "EEXIST / workspace-dir" story is fully debunked (source + live: no such error occurs).
+  - The REAL reproducible blocker is a TURN HANG: the `--agent <id>` turn never completes/streams on
+    the build->nemotron path, with the gateway otherwise healthy. This is intermittent: earlier in
+    this work a watch turn DID complete end-to-end (16 tool calls, live NWS data). So the single-agent
+    slice WORKS but is FLAKY — turns sometimes hang with a live gateway.
+THIS is what to file upstream (NemoClaw/OpenClaw): "agent turn hangs with no output and no error while
+the gateway stays responsive," with evidence: clean init logs, no error, gateway answers exec instantly,
+turn never returns. NOT a mkdir bug.
 
 What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real data" story works
 via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
