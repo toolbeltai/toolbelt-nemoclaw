@@ -54,46 +54,52 @@ main reports "watch/exposure/comms all failed with EEXIST: file already exists w
 create their workspace directories", and `sessions list` shows NO watch/exposure/comms sessions
 were ever created. So the full main -> specialists -> timeline -> synthesis flow does not complete.
 
-Scope: this is OpenClaw-internal (the in-sandbox `openclaw` binary's `sessions_spawn` creates the
-subagent's `workspace-<id>` dir, which is already pre-provisioned from the baked manifest /
-`provision_agent_workspaces`, so the spawn-time create hits EEXIST). There is no spawn code in the
-NemoClaw CLI to patch. Telling evidence: a DIRECT `nemoclaw <sb> agent --agent watch -m ...` turn
-works perfectly (real `toolbelt__toolbelt_context` + `toolbelt__toolbelt_sql`, live data) — only
-spawn-from-main hits EEXIST. Likely a NemoClaw/OpenClaw multi-agent provisioning bug worth filing
-(akin to #976). ISOLATION RESULT (from source, 2026-06-24): `provision_agent_workspaces` in
-`scripts/nemoclaw-start.sh` runs at every gateway start and `mkdir -p`s `workspace-<id>` for every
-agent in the manifest. Our manifest auto-fills per-agent `workspace` (see `agents-manifest.js`
-`fillAgentDefaults`), so those dirs ALWAYS pre-exist at spawn regardless of our persona upload. So
-the upload is NOT the cause; it is NemoClaw pre-provisioning the dir that OpenClaw's spawn then
-re-creates -> EEXIST. Fix to try next (needs a fresh, non-degraded gateway): keep the per-agent
-`workspace` OUT of the baked manifest so ONLY OpenClaw's spawn creates it (requires bypassing the
-host-side `fillAgentDefaults` auto-fill), and/or file the bug upstream, and/or try a newer NemoClaw.
+Telling evidence: a DIRECT `nemoclaw <sb> agent --agent watch -m ...` turn works perfectly (real
+`toolbelt__toolbelt_context` + `toolbelt__toolbelt_sql`, live data) — only spawn-from-main fails.
+
+CORRECTION 2026-06-24 (this overturns the earlier "conclusive root cause" below): the EEXIST is NOT
+a non-idempotent workspace mkdir on either side. Verified from source:
+  - NemoClaw `provision_agent_workspaces` (`scripts/nemoclaw-start.sh:4124`) uses `mkdir -p` —
+    idempotent, cannot throw EEXIST even when the dir pre-exists.
+  - EVERY workspace mkdir in the OpenClaw image (`/usr/local/lib/node_modules/openclaw/dist`) uses
+    `{ recursive: true }`: the spawn path `ensureAgentWorkspace` (`workspace-BxBAoMrZ.js:377`), the
+    agent-files writers (`agents-BzpFMOeR.js:260,603`), and per-agent `agentDir` (`models-config:979`).
+    None can throw EEXIST.
+So `main`'s report ("watch/exposure/comms failed with EEXIST creating their workspace directories")
+cannot be literally true — it was Nemotron PARAPHRASING a spawn failure we never actually captured.
+The real error string is unknown. The earlier isolation conclusion (NemoClaw pre-provisions the dir,
+OpenClaw re-creates it non-idempotently) was wrong: both mkdirs are idempotent.
+
+WHAT'S ACTUALLY NEEDED NEXT: capture the REAL openclaw error/stack from a spawn turn (not the model's
+summary) before filing anything upstream. A bug report about "non-idempotent mkdir" would be incorrect.
 NOTE: the in-sandbox `exec`/gateway becomes unreliable (calls hang at 0 output) after a handful of
 agent turns in one session; a fresh `destroy` + onboard restores it. That flakiness, not the demo
-logic, blocked live confirmation of the spawn fix.
+logic, blocked live confirmation.
 
 What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real data" story works
 via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
 is blocked on the spawn EEXIST.
 
-## Option-1 fix attempt EXHAUSTED 2026-06-24: no config lever exists
+## Option-1 fix attempt 2026-06-24 (now known to have chased a non-cause)
 
-We tried to stop the workspace dir from pre-existing (so OpenClaw could create it on first turn):
-(a) patched the host `fillAgentDefaults` to omit per-agent `workspace`/`agentDir`, and (b) skipped
-specialist persona prefill. Result: the BUILD validator (`generate-openclaw-config.mts`) rejects it
-with `NEMOCLAW_EXTRA_AGENTS_JSON.agents[0].workspace must be a non-empty string`. So `workspace` is
-REQUIRED for secondary agents, NemoClaw always pre-creates `workspace-<id>` at boot, and OpenClaw's
-non-idempotent per-turn `mkdir` always EEXITs. There is NO configuration lever on our side to avoid
-this. (The patch was reverted; `agents-manifest.js` is back to stock.) Confirmed: it bites BOTH
-spawn-from-main AND direct `--agent <id>` invocation once the dir exists.
+We tried to stop the workspace dir from pre-existing: (a) patched the host `fillAgentDefaults` to omit
+per-agent `workspace`/`agentDir`, (b) skipped specialist persona prefill. The BUILD validator
+(`generate-openclaw-config.mts`) rejects an omitted `workspace`
+(`NEMOCLAW_EXTRA_AGENTS_JSON.agents[0].workspace must be a non-empty string`), so the attempt failed
+to build. (Reverted; `agents-manifest.js` is back to stock.) In light of the CORRECTION above this was
+chasing a non-cause anyway: pre-existing dirs don't matter because every workspace mkdir is `mkdir -p`
+/ `{recursive:true}` on both sides. So "keep the dir from pre-existing" was never going to be the fix.
 
 `scripts/run-brief.sh` is the correct SIBLING orchestration (invoke watch/exposure/comms as direct
-sequential turns coordinating via the shared timeline, no main->spawn) and is the way to drive the
-demo once the upstream `mkdir` bug is fixed. It currently fails on the same EEXIST.
+sequential turns coordinating via the shared timeline, no main->spawn) and is the way to drive the demo
+regardless. The summary says it also hit "the same EEXIST" — but that too was the model's paraphrase,
+not a captured error; needs re-verification with the real error in hand.
 
-CONCLUSION: the full multi-agent collaboration is blocked by an upstream OpenClaw bug (non-idempotent
-agent-workspace `mkdir`); it is not fixable from our config. File it upstream. The single-agent path
-(direct specialist turn, real Toolbelt MCP calls on live data) works and is the demoable slice today.
+CONCLUSION (revised): the multi-agent collaboration does not complete, but the root cause is NOT a
+non-idempotent mkdir (source proves both sides use idempotent creates). The actual failure was never
+captured — `main` only paraphrased it as "EEXIST." Before filing upstream, reproduce a spawn turn on a
+fresh gateway and capture the real openclaw error/stack. The single-agent path (direct specialist turn,
+real Toolbelt MCP calls on live data) works and is the demoable slice today.
 
 ## Remaining polish (non-blocking)
 
