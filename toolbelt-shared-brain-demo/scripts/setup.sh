@@ -22,7 +22,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${NEMOCLAW_SANDBOX_NAME:=toolbelt-shared-brain}"
 : "${NEMOCLAW_NON_INTERACTIVE:=1}"
 : "${NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE:=1}"
-: "${NEMOCLAW_MODEL:=nvidia/llama-3.3-nemotron-super-49b-v1}"
+: "${NEMOCLAW_MODEL:=nvidia/nemotron-3-super-120b-a12b}"
 export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 SANDBOX="$NEMOCLAW_SANDBOX_NAME"
 
