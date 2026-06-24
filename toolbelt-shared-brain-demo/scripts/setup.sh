@@ -50,31 +50,42 @@ print(v if v is not None else "")' "$1"; }
 : "${ASSET_CENSUS:=48712868-6148-4b35-a040-753429865205}"  # US Census Blocks 2024
 : "${ASSET_BUILDINGS:=11110bc2-4082-4117-aefc-bde076bab370}" # US Building Footprints
 
-# --- 1. Toolbelt token (the brain's identity) ---
-log "1/6 resolving Toolbelt token"
+# --- 1. Toolbelt token + its default namespace (the brain's identity) ---
+log "1/6 resolving Toolbelt token + default namespace"
+NS=""
 if [ -z "${TOOLBELT_TOKEN:-}" ]; then
-  TOOLBELT_TOKEN="$(curl -fsS -X POST "$HOST/api/onboard" -H 'content-type: application/json' -d '{}' | jget token)"
+  ob="$(curl -fsS -X POST "$HOST/api/onboard" -H 'content-type: application/json' -d '{}')"
+  TOOLBELT_TOKEN="$(printf '%s' "$ob" | jget token)"
+  NS="$(printf '%s' "$ob" | jget namespace.id)"   # onboard returns the token's default namespace
   [ -n "$TOOLBELT_TOKEN" ] || die "anonymous onboard failed"
-  log "  provisioned anonymous token"
+  log "  provisioned anonymous token (default namespace from onboard)"
 fi
 AUTH=(-H "authorization: Bearer $TOOLBELT_TOKEN" -H 'accept: application/json' -H 'content-type: application/json')
 
-# --- 2. namespace (create, else fall back to the token's default) ---
-log "2/6 creating namespace + adopting datasets (the shared brain)"
-# Tolerate transient curl/network blips (exit 56 etc.); retry, then fall back to the
-# token's default namespace. `|| true` keeps `set -e` from aborting on a blip.
-NS=""
-for try in 1 2 3; do
-  NS="$(curl -fsS -X POST "$HOST/api/namespace" "${AUTH[@]}" -d '{"name":"toolbelt-shared-brain"}' 2>/dev/null | jget id || true)"
-  [ -n "$NS" ] && break
-  sleep 3
-done
+# --- 2. resolve the token's DEFAULT namespace, then adopt datasets into IT ---
+# The Toolbelt MCP resolves the namespace from the TOKEN (its default); a /ns/<id>/ URL
+# path is NOT honored, so the agents always read/write the token's default namespace.
+# We therefore seed THAT namespace (no new namespace, no URL pin) so the shared brain the
+# agents use is exactly the one we populate. Default = the auto-created "Default Workspace",
+# falling back to the oldest namespace.
+log "2/6 resolving default namespace + adopting datasets (the shared brain)"
 if [ -z "$NS" ]; then
-  NS="$(curl -fsS "$HOST/api/namespace" "${AUTH[@]}" 2>/dev/null | jget id || true)"   # first/default namespace
-  log "  (create unavailable; using existing namespace)"
+  for try in 1 2 3; do
+    list="$(curl -fsS "$HOST/api/namespace" "${AUTH[@]}" 2>/dev/null || true)"
+    NS="$(printf '%s' "$list" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+a=d if isinstance(d,list) else (d.get("namespaces") or d.get("data") or [])
+if not a: sys.exit(0)
+dw=[n for n in a if (n.get("name") or "")=="Default Workspace"]
+pick=dw[0] if dw else sorted(a,key=lambda n:n.get("createdAt") or "")[0]
+print(pick.get("id") or "")' || true)"
+    [ -n "$NS" ] && break
+    sleep 3
+  done
 fi
-[ -n "$NS" ] || die "could not resolve a namespace (network? check $HOST)"
-log "  namespace = $NS"
+[ -n "$NS" ] || die "could not resolve the default namespace (network? check $HOST)"
+log "  default namespace = $NS"
 
 for pair in "NWS Active Weather Alerts=$ASSET_NWS" "US Census Blocks 2024=$ASSET_CENSUS" "US Building Footprints=$ASSET_BUILDINGS"; do
   name="${pair%%=*}"; aid="${pair##*=}"
@@ -107,36 +118,39 @@ nemoclaw "$SANDBOX" exec --no-tty -- env \
   TOOLBELT_TOKEN="$TOOLBELT_TOKEN" TOOLBELT_HOST="$HOST" \
   npx -y @toolbeltai/cli@latest install --client openclaw
 
-# Pin the MCP server to the seeded namespace + disable the tool-search surface.
-# v0.0.67 has no host-side `config set`, and in-sandbox `openclaw config set` is guarded
-# ("cannot modify config inside the sandbox"). The openclaw.json IS writable via exec and
-# the edit survives `recover` (it does not survive a rebuild/destroy, which is fine for a
-# demo). So patch the file directly, then recover.
-#   - mcp.servers.toolbelt.url -> the namespace-pinned endpoint (agents hit the right brain)
-#   - tools.toolSearch=false   -> expose toolbelt__*/sessions_spawn directly; the compact
+# Disable the tool-search surface. We do NOT pin the MCP url to a /ns/<id>/ path: the
+# Toolbelt MCP ignores that path and resolves the namespace from the token's default
+# (which step 2 seeded), so the installer's bare /mcp url already points the agents at the
+# shared brain. v0.0.67 has no host-side `config set`, and in-sandbox `openclaw config set`
+# is guarded ("cannot modify config inside the sandbox"); but openclaw.json IS writable via
+# exec and the edit survives `recover` (not a rebuild, which is fine for a demo).
+#   - tools.toolSearch=false -> expose toolbelt__*/sessions_spawn directly; the compact
 #     tool-search surface routes every tool through one call Nemotron can't drive.
-log "  pinning MCP namespace + disabling tool-search surface"
-nemoclaw "$SANDBOX" exec --no-tty -- python3 - "$NS" <<'PY'
-import json, sys, pathlib
-ns = sys.argv[1]
-p = pathlib.Path("/sandbox/.openclaw/openclaw.json")
-c = json.loads(p.read_text())
-c.setdefault("mcp", {}).setdefault("servers", {}).setdefault("toolbelt", {})
-c["mcp"]["servers"]["toolbelt"]["url"] = f"https://mcp.toolbelt.ai/ns/{ns}/mcp"
-c.setdefault("tools", {})["toolSearch"] = False
-p.write_text(json.dumps(c, indent=2))
-print("  config patched: mcp url + tools.toolSearch=false")
-PY
+log "  disabling tool-search surface"
+nemoclaw "$SANDBOX" exec --no-tty -- python3 -c 'import json,pathlib; p=pathlib.Path("/sandbox/.openclaw/openclaw.json"); c=json.loads(p.read_text()); c.setdefault("tools",{})["toolSearch"]=False; p.write_text(json.dumps(c,indent=2)); print("  tools.toolSearch=false")'
 
 # --- 6. upload personas + recover so OpenClaw reloads config + skill ---
 log "6/6 uploading personas + recovering gateway"
+# `nemoclaw upload <src> <dest>` does `mkdir -p <dest>` and drops <src> into it by basename
+# (dest is always a DIRECTORY). So to write `<dir>/AGENTS.md`, stage the persona as a file
+# literally named AGENTS.md and upload it to the parent workspace DIRECTORY. tar extract
+# overwrites an existing file (this is how main's stock AGENTS.md gets replaced). No exec needed.
+# main (the reserved primary) reads /sandbox/.openclaw/workspace; specialists read workspace-<id>.
+STAGE="${TMPDIR:-/tmp}/persona.$$"; mkdir -p "$STAGE"
 for id in main watch exposure comms; do
   [ -f "$REPO/workspaces/$id.md" ] || continue
-  # main (the reserved primary) reads /sandbox/.openclaw/workspace; specialists read workspace-<id>.
-  if [ "$id" = "main" ]; then dest="/sandbox/.openclaw/workspace/AGENTS.md"; else dest="/sandbox/.openclaw/workspace-$id/AGENTS.md"; fi
-  nemoclaw "$SANDBOX" upload "$REPO/workspaces/$id.md" "$dest" \
-    || echo "  (upload $id persona — verify workspace path for your OpenClaw version)"
+  if [ "$id" = "main" ]; then dir="/sandbox/.openclaw/workspace"; else dir="/sandbox/.openclaw/workspace-$id"; fi
+  cp "$REPO/workspaces/$id.md" "$STAGE/AGENTS.md"
+  # tar extract refuses to overwrite an existing file; main's workspace ships a stock
+  # AGENTS.md, so remove it first. Specialists' workspace-<id> has no pre-existing AGENTS.md.
+  if [ "$id" = "main" ]; then
+    nemoclaw "$SANDBOX" exec --no-tty -- rm -f "$dir/AGENTS.md" || true
+  fi
+  nemoclaw "$SANDBOX" upload "$STAGE/AGENTS.md" "$dir" \
+    && log "  persona -> $dir/AGENTS.md ($id)" \
+    || echo "  (upload $id persona to $dir failed — verify workspace path for your OpenClaw version)"
 done
+rm -rf "$STAGE"
 nemoclaw "$SANDBOX" recover
 
 log "Done. namespace=$NS"
