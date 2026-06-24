@@ -76,6 +76,25 @@ What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real 
 via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
 is blocked on the spawn EEXIST.
 
+## Option-1 fix attempt EXHAUSTED 2026-06-24: no config lever exists
+
+We tried to stop the workspace dir from pre-existing (so OpenClaw could create it on first turn):
+(a) patched the host `fillAgentDefaults` to omit per-agent `workspace`/`agentDir`, and (b) skipped
+specialist persona prefill. Result: the BUILD validator (`generate-openclaw-config.mts`) rejects it
+with `NEMOCLAW_EXTRA_AGENTS_JSON.agents[0].workspace must be a non-empty string`. So `workspace` is
+REQUIRED for secondary agents, NemoClaw always pre-creates `workspace-<id>` at boot, and OpenClaw's
+non-idempotent per-turn `mkdir` always EEXITs. There is NO configuration lever on our side to avoid
+this. (The patch was reverted; `agents-manifest.js` is back to stock.) Confirmed: it bites BOTH
+spawn-from-main AND direct `--agent <id>` invocation once the dir exists.
+
+`scripts/run-brief.sh` is the correct SIBLING orchestration (invoke watch/exposure/comms as direct
+sequential turns coordinating via the shared timeline, no main->spawn) and is the way to drive the
+demo once the upstream `mkdir` bug is fixed. It currently fails on the same EEXIST.
+
+CONCLUSION: the full multi-agent collaboration is blocked by an upstream OpenClaw bug (non-idempotent
+agent-workspace `mkdir`); it is not fixable from our config. File it upstream. The single-agent path
+(direct specialist turn, real Toolbelt MCP calls on live data) works and is the demoable slice today.
+
 ## Remaining polish (non-blocking)
 
 1. `main` persona upload: `nemoclaw upload` cannot overwrite the existing stock
