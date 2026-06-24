@@ -84,32 +84,49 @@ for pair in "NWS Active Weather Alerts=$ASSET_NWS" "US Census Blocks 2024=$ASSET
 done
 
 # --- 3. onboard NemoClaw with the agent topology baked in ---
-log "3/6 onboarding NemoClaw + baking agent topology (Nemotron from .env)"
+# IMPORTANT (NemoClaw issue #976): patch the build provider to force chat-completions
+# BEFORE onboard, so Nemotron tool calls come back structured (not raw text the agent
+# then tries to exec). The API flavor is baked at onboard time.
+log "3/6 patching build provider for tool-calling, then onboarding (Nemotron from .env)"
 [ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset (build.nvidia.com key) — see .env"
+"$REPO/scripts/patch-build-tool-calls.sh" || die "build-provider patch failed"
 RENDERED_AGENTS="${TMPDIR:-/tmp}/agents.toolbelt.$$.yaml"
 sed "s|__MODEL_REF__|$NEMOCLAW_MODEL|g" "$REPO/agents.yaml" > "$RENDERED_AGENTS"
-nemoclaw onboard --non-interactive --agents "$RENDERED_AGENTS"
+# v0.0.67 CLI: onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.
+nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software --no-gpu \
+  --name "$SANDBOX" --agents "$RENDERED_AGENTS"
 
 # --- 4. egress policy FIRST (the in-sandbox install must reach app.toolbelt.ai to
 #        validate/provision the token; the sandbox is deny-by-default until this) ---
 log "4/6 applying egress policy"
-nemoclaw sandbox policy add "$SANDBOX" --from-file "$REPO/policy.yaml" --yes
+nemoclaw "$SANDBOX" policy-add --from-file "$REPO/policy.yaml" --yes
 
 # --- 5. install the Toolbelt skill + MCP server inside the sandbox ---
 log "5/6 installing Toolbelt skill in sandbox '$SANDBOX'"
-nemoclaw sandbox exec "$SANDBOX" --no-tty -- env \
+nemoclaw "$SANDBOX" exec --no-tty -- env \
   TOOLBELT_TOKEN="$TOOLBELT_TOKEN" TOOLBELT_HOST="$HOST" \
   npx -y @toolbeltai/cli@latest install --client openclaw
 
-# Pin the MCP server to the seeded namespace (so the agents query the right brain).
-nemoclaw sandbox config set "$SANDBOX" \
-  --key mcp.servers.toolbelt.url \
-  --value "https://mcp.toolbelt.ai/ns/$NS/mcp" --config-accept-new-path
-
-# Expose tools DIRECTLY: the default "tool search" compact surface routes every tool
-# through a single tool_search_code call that the Nemotron models can't drive (they
-# spin out hunting for tools). Disable it so toolbelt__* + sessions_spawn are callable.
-nemoclaw sandbox config set "$SANDBOX" --key tools.toolSearch --value false
+# Pin the MCP server to the seeded namespace + disable the tool-search surface.
+# v0.0.67 has no host-side `config set`, and in-sandbox `openclaw config set` is guarded
+# ("cannot modify config inside the sandbox"). The openclaw.json IS writable via exec and
+# the edit survives `recover` (it does not survive a rebuild/destroy, which is fine for a
+# demo). So patch the file directly, then recover.
+#   - mcp.servers.toolbelt.url -> the namespace-pinned endpoint (agents hit the right brain)
+#   - tools.toolSearch=false   -> expose toolbelt__*/sessions_spawn directly; the compact
+#     tool-search surface routes every tool through one call Nemotron can't drive.
+log "  pinning MCP namespace + disabling tool-search surface"
+nemoclaw "$SANDBOX" exec --no-tty -- python3 - "$NS" <<'PY'
+import json, sys, pathlib
+ns = sys.argv[1]
+p = pathlib.Path("/sandbox/.openclaw/openclaw.json")
+c = json.loads(p.read_text())
+c.setdefault("mcp", {}).setdefault("servers", {}).setdefault("toolbelt", {})
+c["mcp"]["servers"]["toolbelt"]["url"] = f"https://mcp.toolbelt.ai/ns/{ns}/mcp"
+c.setdefault("tools", {})["toolSearch"] = False
+p.write_text(json.dumps(c, indent=2))
+print("  config patched: mcp url + tools.toolSearch=false")
+PY
 
 # --- 6. upload personas + recover so OpenClaw reloads config + skill ---
 log "6/6 uploading personas + recovering gateway"
@@ -117,10 +134,10 @@ for id in main watch exposure comms; do
   [ -f "$REPO/workspaces/$id.md" ] || continue
   # main (the reserved primary) reads /sandbox/.openclaw/workspace; specialists read workspace-<id>.
   if [ "$id" = "main" ]; then dest="/sandbox/.openclaw/workspace/AGENTS.md"; else dest="/sandbox/.openclaw/workspace-$id/AGENTS.md"; fi
-  nemoclaw sandbox upload "$SANDBOX" "$REPO/workspaces/$id.md" "$dest" \
+  nemoclaw "$SANDBOX" upload "$REPO/workspaces/$id.md" "$dest" \
     || echo "  (upload $id persona — verify workspace path for your OpenClaw version)"
 done
-nemoclaw sandbox recover "$SANDBOX"
+nemoclaw "$SANDBOX" recover
 
 log "Done. namespace=$NS"
 log "Connect: nemoclaw $SANDBOX connect   (then: openclaw tui)"

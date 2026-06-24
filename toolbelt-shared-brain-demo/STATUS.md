@@ -26,27 +26,41 @@ Inference is Nemotron via build.nvidia.com (no GPU). `scripts/setup.sh` stands i
 - Multi-agent spawn binding works: `subagents.requireAgentId: true` makes `main` spawn the
   specialists as bound agents (they get their own sessions + toolbelt allowlists).
 
-## The one open blocker (model capability)
+## The tool-invocation blocker — RESOLVED 2026-06-24 (NemoClaw issue #976)
 
-The specialist model does NOT invoke the MCP tools that are available to it. It runs the
-tool name as a shell command (`exec toolbelt_context`) and then hunts (`openclaw mcp list`,
-`find ... toolbelt`), producing no query. Confirmed it is NOT config/surfacing/prompt:
-the tools are present (policy log keeps the 4 allowed `toolbelt__*` for `watch`), the MCP
-server is connected, and an explicit "call as MCP tools, never exec" persona did not change
-the behavior. It is a model tool-invocation issue with `nemotron-3-super-120b-a12b` in the
-full multi-tool harness.
+Root cause: the NVIDIA `build` provider routed Nemotron through NVIDIA's `/v1/responses` API,
+which has NO server-side tool-call parser for Nemotron. So tool calls came back as raw text,
+OpenClaw never saw a structured `tool_call`, and the agent fell back to `exec`-ing the bare
+tool name and hunting. This was NOT model capability, config, surfacing, or prompt — every
+local provider path (vLLM/NIM/Ollama) already force-fixes it; the `build` path did not.
 
-## Scoped levers to close the last mile (not prompt tuning)
+Fix: `scripts/patch-build-tool-calls.sh` forces `preferredInferenceApi = "openai-completions"`
+(the OpenAI Chat Completions API, `/v1/chat/completions`, which DOES parse tool calls) for the
+build provider in `~/.nemoclaw/source/dist/lib/onboard.js`, mirroring what NemoClaw's own local
+paths do. `setup.sh` runs it before `onboard`. Re-apply after any `nemoclaw update` (edits
+installed JS); the API flavor is baked at onboard time, so re-onboard after patching.
 
-1. A model that reliably drives MCP tool calls in this harness. Check the gateway inference
-   API format (`NEMOCLAW_PREFERRED_API`; the healthcare reference demo forces chat-completions
-   so tool-call JSON parses) and test models end-to-end in the harness, not just a bare probe.
-2. The `toolbelt` skill content (the @toolbeltai/skills `toolbelt` skill): (a) its setup
-   detection prompts to onboard whenever the loading agent lacks the MCP tools even though the
-   server is configured (hits multi-agent/pre-provisioned setups), and (b) how it teaches tool
-   invocation. Fixing it helps every Toolbelt-on-an-agent deployment.
-3. Bake-remove the stock `weather` skill at the image level (it ships in the base image, can't
-   be removed at runtime, and competes by offering a `curl wttr.in` recipe).
+Verified end-to-end on NemoClaw 0.0.67 / OpenClaw 2026.5.27 with `nvidia/nemotron-3-super-120b-a12b`:
+a single `watch` turn issued real `toolbelt__toolbelt_context` + `toolbelt__toolbelt_sql` MCP
+tool calls (toolSummary: 16 calls, 0 failures) and returned grounded data (an active Severe
+Fire Weather Watch from NWS Flagstaff AZ, expires 2026-06-26), fully inside the egress sandbox.
+
+## Remaining polish (non-blocking)
+
+1. `main` persona upload: `nemoclaw upload` cannot overwrite the existing stock
+   `/sandbox/.openclaw/workspace/AGENTS.md` (`mkdir: ... File exists`). Fix in setup.sh: upload
+   to a `.new` temp path then `mv -f` via exec (the bare-name specialists upload fine because
+   their per-agent AGENTS.md does not pre-exist). The exec-mv hits the auto-mode remote-shell-write
+   gate when run by an agent; a human run or an authorized rule clears it.
+2. Namespace pin: the `watch` context call resolved namespace `2ed11364…` rather than the
+   seeded/pinned `1dd46652…` (still found `weather.nws_alerts` with real data). Confirm whether
+   `/ns/<id>/mcp` pinning is honored or the token's default namespace is selected; pin harder if
+   needed so agents always hit the seeded brain with the 3 adopted datasets.
+3. The `toolbelt` skill content: its setup detection prompts to onboard whenever the loading
+   agent lacks the MCP tools even though the server is configured (hits multi-agent setups). See
+   `project-toolbelt-skill-setup-misdetect`. Helps every Toolbelt-on-an-agent deployment.
+4. Bake-remove the stock `weather` skill at the image level (ships in the base image, competes
+   by offering a `curl wttr.in` recipe).
 
 ## What was changed vs the original download
 
