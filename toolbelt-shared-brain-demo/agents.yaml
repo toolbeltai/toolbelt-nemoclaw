@@ -1,0 +1,68 @@
+# Agent topology for the Toolbelt shared-brain demo.
+# Applied at build time via:  nemoclaw onboard --agents agents.yaml
+# (NemoClaw bakes this into the sandbox image; the build is the source of truth for
+#  per-agent validation, so first onboard surfaces any schema errors to fix here.)
+#
+# __MODEL_REF__ is filled by scripts/setup.sh from NEMOCLAW_MODEL.
+#
+# main coordinates via sessions_spawn; watch/exposure/comms collaborate through the
+# Toolbelt namespace (the shared brain), not by talking to each other.
+
+defaults:
+  subagents:
+    maxSpawnDepth: 1
+
+# Coordinator (the reserved primary agent): the only one allowed to spawn/list sub-agents.
+main:
+  subagents:
+    allowAgents: [watch, exposure, comms]
+    # Force the model to pass agentId to sessions_spawn so spawns bind the DEFINED
+    # specialist agents (with their toolbelt allowlists), not unbound ephemeral sessions.
+    requireAgentId: true
+  tools:
+    profile: coding
+    allow:
+      - read
+      - exec
+      - process
+      - session_status
+      - agents_list
+      - sessions_spawn
+      - sessions_yield
+      - subagents
+
+agents:
+  # watch: query active severe-weather alerts, record them to the shared timeline.
+  - id: watch
+    tools:
+      profile: coding
+      allow:
+        - read
+        - exec
+        - toolbelt__toolbelt_context
+        - toolbelt__toolbelt_sql
+        - toolbelt__toolbelt_record
+        - toolbelt__toolbelt_timeline
+
+  # exposure: read alerts from the brain, geo-join population/buildings, record findings.
+  - id: exposure
+    tools:
+      profile: coding
+      allow:
+        - read
+        - exec
+        - toolbelt__toolbelt_timeline
+        - toolbelt__toolbelt_sql
+        - toolbelt__toolbelt_record
+
+  # comms: read exposure findings + entities, draft and save the briefing.
+  - id: comms
+    tools:
+      profile: coding
+      allow:
+        - read
+        - exec
+        - toolbelt__toolbelt_timeline
+        - toolbelt__toolbelt_entity
+        - toolbelt__toolbelt_record
+        - toolbelt__toolbelt_save

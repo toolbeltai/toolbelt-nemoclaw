@@ -1,0 +1,32 @@
+preset:
+  name: toolbelt-shared-brain
+  description: Deny-by-default egress; the only external hosts allowed are the Toolbelt MCP brain and the Nemotron inference endpoint.
+
+network_policies:
+  toolbelt-shared-brain:
+    name: toolbelt-shared-brain
+    endpoints:
+      # THE SHARED BRAIN — the one external path the agents need at runtime.
+      - host: mcp.toolbelt.ai
+        port: 443
+        access: full
+      # Toolbelt control plane — `toolbelt install` validates/provisions the token here.
+      - host: app.toolbelt.ai
+        port: 443
+        access: full
+      # Nemotron inference via build.nvidia.com.
+      - host: integrate.api.nvidia.com
+        port: 443
+        access: full
+      - host: build.nvidia.com
+        port: 443
+        access: full
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/local/bin/python3 }
+      - { path: /usr/bin/curl }
+      - { path: /usr/local/bin/curl }
+      - { path: /usr/local/bin/node }
+# Everything else is denied by default. The demo proves this live: ask an agent to reach a
+# non-allowlisted host (e.g. example.com) and OpenShell returns a policy-controlled 403 — the
+# agents cannot exfiltrate or call anything but the Toolbelt brain and Nemotron.

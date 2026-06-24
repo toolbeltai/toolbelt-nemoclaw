@@ -1,0 +1,40 @@
+# PRIMARY path: Sysbox runtime — Docker-in-Docker WITHOUT --privileged (the secure way).
+# Requires the Sysbox runtimeclass installed on the cluster nodes.
+apiVersion: v1
+kind: Namespace
+metadata: { name: toolbelt-claw-demo }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: docker-data, namespace: toolbelt-claw-demo }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: 40Gi } }   # caches the built OpenShell sandbox across restarts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: toolbelt-shared-brain, namespace: toolbelt-claw-demo }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }                 # single owner of the docker data dir
+  selector: { matchLabels: { app: toolbelt-shared-brain } }
+  template:
+    metadata: { labels: { app: toolbelt-shared-brain } }
+    spec:
+      runtimeClassName: sysbox-runc            # <-- the key: rootless DinD, no privileged
+      containers:
+        - name: toolbelt-claw
+          image: ghcr.io/toolbeltai/toolbelt-shared-brain:latest   # build from nemoclaw-k8s/Dockerfile
+          env:
+            - { name: START_DOCKERD, value: "1" }   # Sysbox: run our own dockerd
+          envFrom:
+            - configMapRef: { name: demo-config }
+            - secretRef:    { name: demo-secrets }
+          ports: [{ containerPort: 18789 }]
+          resources:
+            requests: { cpu: "2", memory: 6Gi }
+            limits:   { cpu: "8", memory: 16Gi }
+          volumeMounts:
+            - { name: docker-data, mountPath: /var/lib/docker }
+      volumes:
+        - { name: docker-data, persistentVolumeClaim: { claimName: docker-data } }

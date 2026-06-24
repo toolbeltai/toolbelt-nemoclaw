@@ -1,0 +1,21 @@
+# Run the shared-brain demo anywhere — one container, no NemoClaw, no DinD.
+#   docker compose --env-file ../.env up --build
+# Then drive it:  docker compose exec team openclaw tui   (ask main for the situation brief)
+services:
+  team:
+    build:
+      context: ..                      # build from the demo root so it can COPY openclaw.json + workspaces/
+      dockerfile: run-anywhere/Dockerfile
+    image: toolbelt-shared-brain:local
+    environment:
+      TOOLBELT_NAMESPACE: "${TOOLBELT_NAMESPACE:?set in .env or pass through}"
+      TOOLBELT_TOKEN: "${TOOLBELT_TOKEN:-}"
+      TOOLBELT_HOST: "${TOOLBELT_HOST:-app.toolbelt.ai}"
+      MODEL_ENDPOINT: "${MODEL_ENDPOINT:-https://integrate.api.nvidia.com/v1}"
+      MODEL_REF: "${NEMOCLAW_MODEL:-nvidia/llama-3.3-nemotron-super-49b-v1}"
+      NVIDIA_API_KEY: "${NEMOCLAW_PROVIDER_KEY:-}"   # Nemotron via build.nvidia.com
+    # No privileged/DinD needed — this is a plain app container. State lives in Toolbelt, not here.
+    restart: unless-stopped
+# k8s equivalent: one Deployment of image toolbelt-shared-brain, same env from a Secret/ConfigMap.
+# A more decoupled topology (one container PER agent, all sharing TOOLBELT_NAMESPACE) is also valid —
+# use it if you want each specialist to scale/restart independently instead of sessions_spawn.

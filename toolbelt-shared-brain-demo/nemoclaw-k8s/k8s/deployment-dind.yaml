@@ -1,0 +1,42 @@
+# FALLBACK path: a privileged DinD sidecar provides the Docker daemon. Use when Sysbox isn't
+# available. The app container is NOT privileged; only the dind sidecar is.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: docker-data-dind, namespace: toolbelt-claw-demo }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: 40Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: toolbelt-shared-brain-dind, namespace: toolbelt-claw-demo }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: toolbelt-shared-brain-dind } }
+  template:
+    metadata: { labels: { app: toolbelt-shared-brain-dind } }
+    spec:
+      containers:
+        - name: dind
+          image: docker:27-dind
+          securityContext: { privileged: true }     # only the sidecar is privileged
+          env:
+            - { name: DOCKER_TLS_CERTDIR, value: "" }  # plain TCP on localhost:2375 (pod-local only)
+          args: ["--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock"]
+          volumeMounts:
+            - { name: docker-data-dind, mountPath: /var/lib/docker }
+        - name: toolbelt-claw
+          image: ghcr.io/toolbeltai/toolbelt-shared-brain:latest
+          env:
+            - { name: START_DOCKERD, value: "0" }
+            - { name: DOCKER_HOST,   value: "tcp://localhost:2375" }
+          envFrom:
+            - configMapRef: { name: demo-config }
+            - secretRef:    { name: demo-secrets }
+          ports: [{ containerPort: 18789 }]
+          resources:
+            requests: { cpu: "2", memory: 6Gi }
+            limits:   { cpu: "8", memory: 16Gi }
+      volumes:
+        - { name: docker-data-dind, persistentVolumeClaim: { claimName: docker-data-dind } }

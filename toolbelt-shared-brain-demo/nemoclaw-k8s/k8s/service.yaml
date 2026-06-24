@@ -1,0 +1,9 @@
+# Exposes the OpenClaw gateway so you can connect/drive the team. VERIFY the real gateway port.
+apiVersion: v1
+kind: Service
+metadata: { name: toolbelt-shared-brain, namespace: toolbelt-claw-demo }
+spec:
+  selector: { app: toolbelt-shared-brain }   # change to -dind if using the DinD fallback
+  ports:
+    - { name: gateway, port: 18789, targetPort: 18789 }
+  type: ClusterIP                            # set LoadBalancer to reach it externally

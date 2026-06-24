@@ -1,0 +1,109 @@
+{
+  "_comment": "Toolbelt shared-brain demo. Placeholders (__X__) are filled by scripts/setup.sh. Modeled on healthcare-monitor-demo/openclaw.json; verify MCP-tool permission naming against the output of `toolbelt install --client openclaw`.",
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "inference": {
+        "baseUrl": "https://inference.local/v1",
+        "apiKey": "unused",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "__MODEL_ID__",
+            "name": "__MODEL_REF__",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 1000000,
+            "maxTokens": 4096
+          }
+        ]
+      }
+    }
+  },
+  "skills": {
+    "load": { "extraDirs": ["/sandbox/.openclaw/skills"] }
+  },
+  "mcp": {
+    "servers": {
+      "toolbelt": {
+        "type": "http",
+        "url": "https://mcp.toolbelt.ai/ns/__TOOLBELT_NAMESPACE__/mcp",
+        "headers": { "Authorization": "Bearer __TOOLBELT_TOKEN__" }
+      }
+    }
+  },
+  "tools": {
+    "profile": "minimal",
+    "deny": [
+      "write", "edit", "apply_patch", "browser", "web_search", "x_search",
+      "web_fetch", "message", "gateway", "cron", "nodes", "canvas",
+      "image_generate", "music_generate", "video_generate", "tts"
+    ]
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/sandbox/.openclaw/workspace-main",
+      "model": { "primary": "__MODEL_REF__" },
+      "timeoutSeconds": 300,
+      "skills": [],
+      "subagents": {
+        "allowAgents": ["watch", "exposure", "comms"],
+        "maxSpawnDepth": 1,
+        "maxConcurrent": 3
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "workspace": "/sandbox/.openclaw/workspace-main",
+        "model": { "primary": "__MODEL_REF__" },
+        "skills": ["toolbelt"],
+        "subagents": { "allowAgents": ["watch", "exposure", "comms"] },
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "read", "exec", "process", "session_status",
+            "agents_list", "sessions_spawn", "sessions_yield", "subagents"
+          ]
+        }
+      },
+      {
+        "id": "watch",
+        "workspace": "/sandbox/.openclaw/workspace-watch",
+        "model": { "primary": "__MODEL_REF__" },
+        "skills": ["toolbelt"],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": ["read", "exec", "mcp__toolbelt__toolbelt_sql", "mcp__toolbelt__toolbelt_record", "mcp__toolbelt__toolbelt_timeline", "mcp__toolbelt__toolbelt_context"]
+        }
+      },
+      {
+        "id": "exposure",
+        "workspace": "/sandbox/.openclaw/workspace-exposure",
+        "model": { "primary": "__MODEL_REF__" },
+        "skills": ["toolbelt"],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": ["read", "exec", "mcp__toolbelt__toolbelt_timeline", "mcp__toolbelt__toolbelt_sql", "mcp__toolbelt__toolbelt_record"]
+        }
+      },
+      {
+        "id": "comms",
+        "workspace": "/sandbox/.openclaw/workspace-comms",
+        "model": { "primary": "__MODEL_REF__" },
+        "skills": ["toolbelt"],
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": ["read", "exec", "mcp__toolbelt__toolbelt_timeline", "mcp__toolbelt__toolbelt_entity", "mcp__toolbelt__toolbelt_record", "mcp__toolbelt__toolbelt_save"]
+        }
+      }
+    ]
+  }
+}
