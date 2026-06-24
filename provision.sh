@@ -50,6 +50,16 @@ fi
 : "${TOOLBELT_CLI_REF:=latest}"
 export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE NEMOCLAW_SANDBOX_NAME
 
+# The Toolbelt CLI builds request URLs with `new URL(host + path)`, which throws on a
+# scheme-less host. Normalize so TOOLBELT_HOST=app.toolbelt.ai still works.
+if [ -n "${TOOLBELT_HOST:-}" ]; then
+  case "$TOOLBELT_HOST" in
+    http://*|https://*) ;;
+    *) TOOLBELT_HOST="https://$TOOLBELT_HOST" ;;
+  esac
+  export TOOLBELT_HOST
+fi
+
 SANDBOX="$NEMOCLAW_SANDBOX_NAME"
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
