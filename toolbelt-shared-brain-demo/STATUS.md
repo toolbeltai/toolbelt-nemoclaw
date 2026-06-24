@@ -60,9 +60,17 @@ subagent's `workspace-<id>` dir, which is already pre-provisioned from the baked
 NemoClaw CLI to patch. Telling evidence: a DIRECT `nemoclaw <sb> agent --agent watch -m ...` turn
 works perfectly (real `toolbelt__toolbelt_context` + `toolbelt__toolbelt_sql`, live data) — only
 spawn-from-main hits EEXIST. Likely a NemoClaw/OpenClaw multi-agent provisioning bug worth filing
-(akin to #976). Candidate levers to try next: (a) a run that delivers NO specialist persona/dir to
-isolate whether pre-creating `workspace-<id>` is the trigger vs. provisioning itself; (b) check if
-the manifest should OMIT per-agent `workspace` so only one path creates it; (c) newer NemoClaw.
+(akin to #976). ISOLATION RESULT (from source, 2026-06-24): `provision_agent_workspaces` in
+`scripts/nemoclaw-start.sh` runs at every gateway start and `mkdir -p`s `workspace-<id>` for every
+agent in the manifest. Our manifest auto-fills per-agent `workspace` (see `agents-manifest.js`
+`fillAgentDefaults`), so those dirs ALWAYS pre-exist at spawn regardless of our persona upload. So
+the upload is NOT the cause; it is NemoClaw pre-provisioning the dir that OpenClaw's spawn then
+re-creates -> EEXIST. Fix to try next (needs a fresh, non-degraded gateway): keep the per-agent
+`workspace` OUT of the baked manifest so ONLY OpenClaw's spawn creates it (requires bypassing the
+host-side `fillAgentDefaults` auto-fill), and/or file the bug upstream, and/or try a newer NemoClaw.
+NOTE: the in-sandbox `exec`/gateway becomes unreliable (calls hang at 0 output) after a handful of
+agent turns in one session; a fresh `destroy` + onboard restores it. That flakiness, not the demo
+logic, blocked live confirmation of the spawn fix.
 
 What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real data" story works
 via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
