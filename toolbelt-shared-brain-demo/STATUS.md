@@ -45,6 +45,29 @@ a single `watch` turn issued real `toolbelt__toolbelt_context` + `toolbelt__tool
 tool calls (toolSummary: 16 calls, 0 failures) and returned grounded data (an active Severe
 Fire Weather Watch from NWS Flagstaff AZ, expires 2026-06-26), fully inside the egress sandbox.
 
+## New blocker found 2026-06-24: subagent spawn fails with EEXIST (OpenClaw-internal)
+
+End-to-end status after the fixes below: `setup.sh` stands up the whole stack clean on a fresh
+gateway, all four personas deliver, and `main` correctly DELEGATES via `sessions_spawn` (4 calls,
+0 failures, no onboard-flail — the persona works). BUT the spawned specialists die immediately:
+main reports "watch/exposure/comms all failed with EEXIST: file already exists when trying to
+create their workspace directories", and `sessions list` shows NO watch/exposure/comms sessions
+were ever created. So the full main -> specialists -> timeline -> synthesis flow does not complete.
+
+Scope: this is OpenClaw-internal (the in-sandbox `openclaw` binary's `sessions_spawn` creates the
+subagent's `workspace-<id>` dir, which is already pre-provisioned from the baked manifest /
+`provision_agent_workspaces`, so the spawn-time create hits EEXIST). There is no spawn code in the
+NemoClaw CLI to patch. Telling evidence: a DIRECT `nemoclaw <sb> agent --agent watch -m ...` turn
+works perfectly (real `toolbelt__toolbelt_context` + `toolbelt__toolbelt_sql`, live data) — only
+spawn-from-main hits EEXIST. Likely a NemoClaw/OpenClaw multi-agent provisioning bug worth filing
+(akin to #976). Candidate levers to try next: (a) a run that delivers NO specialist persona/dir to
+isolate whether pre-creating `workspace-<id>` is the trigger vs. provisioning itself; (b) check if
+the manifest should OMIT per-agent `workspace` so only one path creates it; (c) newer NemoClaw.
+
+What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real data" story works
+via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
+is blocked on the spawn EEXIST.
+
 ## Remaining polish (non-blocking)
 
 1. `main` persona upload: `nemoclaw upload` cannot overwrite the existing stock
