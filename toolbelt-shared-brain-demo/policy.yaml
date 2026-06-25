@@ -27,6 +27,26 @@ network_policies:
       - { path: /usr/bin/curl }
       - { path: /usr/local/bin/curl }
       - { path: /usr/local/bin/node }
+
+  # Gateway dial-back (NemoClaw issue #5237). sessions_spawn children dial the
+  # gateway over the sandbox's own eth0 (10.200.0.2) — loopback is hard-blocked by
+  # the OpenShell L7 proxy. The base policy only allowlists 18789/18790; our gateway
+  # runs on a custom port (NEMOCLAW_DASHBOARD_PORT=18888), so allow that here as a
+  # raw L4 tunnel (tls: skip — a rest endpoint would break the WS 101 upgrade).
+  # Without this, every spawned specialist dies with `1006 abnormal closure`.
+  gateway-dialback-18888:
+    name: gateway-dialback-18888
+    endpoints:
+      - host: 10.200.0.2
+        port: 18888
+        access: full
+        tls: skip
+        allowed_ips:
+          - 10.200.0.2
+    binaries:
+      - { path: /usr/local/bin/openclaw }
+      - { path: /usr/local/bin/node }
+      - { path: /usr/bin/node }
 # Everything else is denied by default. The demo proves this live: ask an agent to reach a
 # non-allowlisted host (e.g. example.com) and OpenShell returns a policy-controlled 403 — the
 # agents cannot exfiltrate or call anything but the Toolbelt brain and Nemotron.

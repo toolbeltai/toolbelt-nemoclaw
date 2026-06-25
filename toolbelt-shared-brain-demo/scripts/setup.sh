@@ -101,6 +101,11 @@ done
 log "3/6 patching build provider for tool-calling, then onboarding (Nemotron from .env)"
 [ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset (build.nvidia.com key) — see .env"
 "$REPO/scripts/patch-build-tool-calls.sh" || die "build-provider patch failed"
+# issue #5237: onboard doesn't forward NEMOCLAW_GATEWAY_WS_HOST into the sandbox, so the
+# gateway dial-back host can't be overridden when `hostname -I` can't derive eth0 (it then
+# falls back to loopback, which the L7 proxy blocks -> every sessions_spawn child gets 1006).
+# This patch adds the forward; we set NEMOCLAW_GATEWAY_WS_HOST=10.200.0.2 (the sandbox bridge).
+"$REPO/scripts/patch-forward-gateway-ws-host.sh" || die "gateway-ws-host forward patch failed"
 RENDERED_AGENTS="${TMPDIR:-/tmp}/agents.toolbelt.$$.yaml"
 sed "s|__MODEL_REF__|$NEMOCLAW_MODEL|g" "$REPO/agents.yaml" > "$RENDERED_AGENTS"
 # v0.0.67 CLI: onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.
