@@ -16,9 +16,25 @@ See `README.md` for the architecture and `STATUS.md` for the full build history 
 
 ## Prerequisites (system-level, NOT in the repo)
 
-- **NemoClaw** installed, with `nemoclaw` on PATH (`command -v nemoclaw`).
-- **A container runtime** NemoClaw can drive (Docker / Docker Desktop). The sandbox base image is
-  pulled from ghcr on first onboard.
+- **NemoClaw** installed, with `nemoclaw` on PATH (`command -v nemoclaw`). Install it with the official
+  one-shot script — it also installs **Docker** (if missing) and Node.js on Linux:
+
+  ```bash
+  # non-interactive (servers): installs Docker + Node + NemoClaw, then runs the onboard wizard
+  curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 bash
+  ```
+
+  (Docs: https://docs.nvidia.com/nemoclaw/latest/user-guide/openclaw/get-started/quickstart — Linux,
+  macOS, and WSL supported.) You can let the installer's onboard wizard finish or skip it; `setup.sh`
+  below does its own named-sandbox onboard for this demo regardless.
+- **A container runtime** NemoClaw drives (Docker). The installer handles this on Linux; the sandbox
+  base image is pulled from ghcr on first onboard.
+
+> Note: `nemoclaw-k8s/` (image + `provision.sh`) and `run-anywhere/` are SEPARATE deployment
+> topologies (Kubernetes-with-sandbox, and plain-container-without-sandbox). For a normal host, use
+> the `scripts/setup.sh` flow below. `nemoclaw-k8s/provision.sh` is currently STALE — it predates the
+> v0.0.67 CLI corrections in `scripts/setup.sh` (it still uses the non-existent `nemoclaw sandbox …`
+> commands) and would need the same fixes before use.
 - An **inference API key**:
   - Recommended: an **Anthropic** key (`sk-ant-...`) for Claude Haiku — reliable, fast tool-calling.
   - Alternative: an NVIDIA build.nvidia.com key (`nvapi-...`) — see the NVIDIA block in `.env.example`
