@@ -100,7 +100,12 @@ done
 # then tries to exec). The API flavor is baked at onboard time.
 log "3/6 patching build provider for tool-calling, then onboarding (Nemotron from .env)"
 [ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset (build.nvidia.com key) — see .env"
-"$REPO/scripts/patch-build-tool-calls.sh" || die "build-provider patch failed"
+# The #976 tool-call patch only matters for the NVIDIA `build` provider (it forces chat-completions
+# so Nemotron tool calls parse). For anthropic/openai/etc. it's irrelevant and the onboard.js anchor
+# may not exist, so only apply it when actually using the build provider.
+if [ "${NEMOCLAW_PROVIDER:-}" = "build" ]; then
+  "$REPO/scripts/patch-build-tool-calls.sh" || die "build-provider patch failed"
+fi
 RENDERED_AGENTS="${TMPDIR:-/tmp}/agents.toolbelt.$$.yaml"
 sed "s|__MODEL_REF__|$NEMOCLAW_MODEL|g" "$REPO/agents.yaml" > "$RENDERED_AGENTS"
 # v0.0.67 CLI: onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.

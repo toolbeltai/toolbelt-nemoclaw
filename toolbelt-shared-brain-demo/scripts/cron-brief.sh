@@ -12,6 +12,9 @@
 #   - verifies the sandbox gateway is reachable (skips the tick if it isn't — cron retries),
 #   - runs run-brief.sh, logging the full transcript to brief-runs/brief-<RUN_TS>.log.
 set -uo pipefail
+# cron runs with a minimal PATH; make sure `nemoclaw` (commonly in ~/.local/bin or /usr/local/bin)
+# and friends are found on both macOS and Linux. Adjust if your nemoclaw lives elsewhere.
+export PATH="$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${PATH:-}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -f "$REPO/.env" ] && { set -a; . "$REPO/.env"; set +a; }
 SB="${NEMOCLAW_SANDBOX_NAME:-toolbelt-shared-brain}"
@@ -37,14 +40,14 @@ ts "finished rc=$rc — artifact: 'Severe-Weather Brief $RUN_TS' (log: $LOG)" | 
 exit "$rc"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Install as a cron job (every 30 minutes). Edit your crontab with `crontab -e`
-# and add (absolute paths required; cron has a minimal PATH so we set it):
+# Install as a cron job (every 30 minutes): just run ./scripts/install-cron.sh — it derives the
+# repo path and schedules this script portably (no hardcoded paths). To do it by hand instead,
+# `crontab -e` and add one line (absolute path to THIS script, wherever you cloned the repo):
 #
-#   PATH=/Users/jradonich/.local/bin:/usr/local/bin:/usr/bin:/bin
-#   */30 * * * * /Users/jradonich/dev/tool/toolbelt-claw/toolbelt-shared-brain-demo/scripts/cron-brief.sh >> /Users/jradonich/dev/tool/toolbelt-claw/toolbelt-shared-brain-demo/brief-runs/cron.log 2>&1
+#   */30 * * * * /ABSOLUTE/PATH/TO/scripts/cron-brief.sh >> /ABSOLUTE/PATH/TO/brief-runs/cron.log 2>&1
 #
 # Notes:
-#  - `nemoclaw` must be on cron's PATH (adjust the PATH line to wherever `which nemoclaw` lives).
+#  - This script sets PATH at the top so cron finds `nemoclaw`; edit that line if yours is elsewhere.
 #  - The sandbox must stay onboarded; if the host reboots, re-run ./scripts/setup.sh.
 #  - Each tick writes brief-runs/brief-<UTC>.log and saves a dated brief doc in the namespace.
 # ─────────────────────────────────────────────────────────────────────────────
