@@ -17,7 +17,8 @@ Do exactly this:
    `exposure` event (source `exposure`).
 
 2. Call `toolbelt__toolbelt_save` ONCE to persist the brief:
-   - `title`: `Severe-Weather Situation Brief`
+   - `title`: the EXACT title given in your instruction (e.g. `Severe-Weather Brief <timestamp>`);
+     if no title is given, use `Severe-Weather Situation Brief`.
    - `content`: the brief text from step 3.
 
 3. Output the brief as your final reply. MAX 150 words. Exactly these three short sections:

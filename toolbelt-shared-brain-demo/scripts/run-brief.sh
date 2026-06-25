@@ -18,6 +18,8 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -f "$REPO/.env" ] && { set -a; . "$REPO/.env"; set +a; }
 SB="${NEMOCLAW_SANDBOX_NAME:-toolbelt-shared-brain}"
+# Run timestamp — used to title this tick's saved brief artifact (cron passes its own).
+RUN_TS="${RUN_TS:-$(date -u +%Y-%m-%dT%H:%MZ)}"
 
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
@@ -45,6 +47,6 @@ for line in (txt or "(no visible text)").splitlines():
 
 run_agent watch    "Record the current top active Severe/Extreme alerts to the shared timeline now. Follow your instructions exactly: one SQL query (LIMIT 6), one record call per row, then a one-line summary. Be terse, no narration."
 run_agent exposure "Read the alerts on the shared timeline and record one exposure finding now. Follow your instructions exactly: one timeline read, one SQL query, one record call, then a one-line summary. Be terse, no narration."
-run_agent comms    "Write the severe-weather situation brief now. Read the timeline, save the brief, and output it as your reply (max 150 words: Headline hazards / Exposure / Recommended communication). Be terse, no narration; the brief itself is your reply."
+run_agent comms    "Write the severe-weather situation brief now. Read the timeline, then save the brief with the EXACT title 'Severe-Weather Brief $RUN_TS', and output it as your reply (max 150 words: Headline hazards / Exposure / Recommended communication). Be terse, no narration; the brief itself is your reply."
 
-log "Done. The brief is comms's output above (also saved to the namespace)."
+log "Done. Brief saved as 'Severe-Weather Brief $RUN_TS' in the namespace (and shown above)."
