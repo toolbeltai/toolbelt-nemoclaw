@@ -221,6 +221,34 @@ real Toolbelt MCP calls on live data) works and is the demoable slice today.
 - `workspaces/main.md`: told it Toolbelt is already configured, never onboard, delegate by id.
 - `.env`: NOT included (held the NVIDIA key + token). Use `.env.example`.
 
+## ACTUAL ROOT CAUSE 2026-06-25 (SUPERSEDES the #5237 analysis above)
+
+The EEXIST was REAL all along and the root cause is OURS, not upstream. On a clean stock onboard,
+EVERY secondary-agent turn (spawn AND host-driven sibling) fails fast with:
+  `EEXIST: file already exists, mkdir '/sandbox/.openclaw/workspace-<id>'`
+Filesystem check showed why: `/sandbox/.openclaw/workspace-watch|exposure|comms` existed as FILES
+(914-1251 bytes = the persona markdown), while `workspace` (main's) was a proper directory.
+
+Mechanism: `setup.sh` delivered specialist personas with
+  `nemoclaw upload <persona> /sandbox/.openclaw/workspace-<id>`
+which wrote the persona content AS the `workspace-<id>` path (a FILE), instead of into it as
+`workspace-<id>/AGENTS.md`. Then OpenClaw's `ensureAgentWorkspace` runs `mkdir(dir,{recursive:true})`
+for that agent's workspace — and a recursive mkdir STILL throws EEXIST when the path already exists as
+a NON-directory. So the agent's own workspace-provisioning tripped on our mis-placed file.
+
+Why this misled the whole investigation:
+  - Nemotron's original "EEXIST creating workspace dirs" report was ACCURATE, not a fabrication. The
+    earlier "it's a paraphrase / mkdir is idempotent" correction was WRONG — it missed that recursive
+    mkdir throws on a non-directory.
+  - The entire #5237 (1006/1008 pairing) detour was self-inflicted: changing OPENCLAW_GATEWAY_URL to
+    eth0 made spawn fail EARLIER at the auth layer (1008), masking the underlying EEXIST. #5237's gaps
+    are real but were never our actual blocker for the demo.
+
+THE FIX (ours, simple): write each persona as `<workspace>/AGENTS.md` with <workspace> guaranteed to be
+a directory. setup.sh step 6 now does this for ALL agents via exec (rm any stray file -> mkdir -p the
+dir -> base64-write AGENTS.md inside). No `nemoclaw upload` for personas. No gateway/port/auth changes
+needed. The sibling driver (run-brief.sh) then drives watch->exposure->comms as host-driven turns.
+
 ## To run
 
     cp .env.example .env    # set NEMOCLAW_PROVIDER_KEY (build.nvidia.com); model defaults to a verified one

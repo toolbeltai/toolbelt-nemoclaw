@@ -129,36 +129,26 @@ nemoclaw "$SANDBOX" exec --no-tty -- env \
 log "  disabling tool-search surface"
 nemoclaw "$SANDBOX" exec --no-tty -- python3 -c 'import json,pathlib; p=pathlib.Path("/sandbox/.openclaw/openclaw.json"); c=json.loads(p.read_text()); c.setdefault("tools",{})["toolSearch"]=False; p.write_text(json.dumps(c,indent=2)); print("  tools.toolSearch=false")'
 
-# --- 6. upload personas + recover so OpenClaw reloads config + skill ---
-log "6/6 uploading personas + recovering gateway"
-# `nemoclaw upload <src> <dest>` does `mkdir -p <dest>` and drops <src> into it by basename
-# (dest is always a DIRECTORY). So to write `<dir>/AGENTS.md`, stage the persona as a file
-# literally named AGENTS.md and upload it to the parent workspace DIRECTORY. tar extract
-# overwrites an existing file (this is how main's stock AGENTS.md gets replaced). No exec needed.
-# main (the reserved primary) reads /sandbox/.openclaw/workspace; specialists read workspace-<id>.
-STAGE="${TMPDIR:-/tmp}/persona.$$"; mkdir -p "$STAGE"
+# --- 6. write personas + recover so OpenClaw reloads config + skill ---
+log "6/6 writing personas + recovering gateway"
+# CRITICAL: each agent reads <workspace>/AGENTS.md, where <workspace> MUST be a DIRECTORY.
+# Do NOT use `nemoclaw upload <persona> /sandbox/.openclaw/workspace-<id>`: upload wrote the
+# persona content AS the `workspace-<id>` path (a FILE), not into it. That single bug caused
+# every secondary-agent turn to die with `EEXIST: mkdir '/sandbox/.openclaw/workspace-<id>'` —
+# OpenClaw's ensureAgentWorkspace does `mkdir(dir, {recursive:true})`, and a recursive mkdir
+# STILL throws EEXIST when the path already exists as a non-directory (a file). So for every
+# agent we explicitly ensure the workspace is a directory, then write AGENTS.md inside it via
+# exec (base64 round-trip avoids newline/quoting issues). main reads /sandbox/.openclaw/workspace;
+# specialists read /sandbox/.openclaw/workspace-<id>.
 for id in main watch exposure comms; do
   [ -f "$REPO/workspaces/$id.md" ] || continue
   if [ "$id" = "main" ]; then dir="/sandbox/.openclaw/workspace"; else dir="/sandbox/.openclaw/workspace-$id"; fi
-  if [ "$id" = "main" ]; then
-    # main's workspace ships a stock AGENTS.md and `upload` (tar extract) refuses to
-    # overwrite an existing file. A redirect write truncates/overwrites cleanly, so write
-    # the persona via exec, passing the content base64-encoded (single token, no newline
-    # issues). The agent data dir is writable via exec and the edit survives `recover`.
-    b64="$(base64 < "$REPO/workspaces/$id.md" | tr -d '\n')"
-    nemoclaw "$SANDBOX" exec --no-tty -- sh -c "printf %s '$b64' | base64 -d > '$dir/AGENTS.md'" \
-      && log "  persona -> $dir/AGENTS.md ($id, via exec write)" \
-      || echo "  (write $id persona to $dir failed)"
-  else
-    # Specialists' workspace-<id> has no pre-existing AGENTS.md, so a direct upload is fine.
-    # `upload <src> <dir>` drops <src> into <dir> by basename, so stage the file as AGENTS.md.
-    cp "$REPO/workspaces/$id.md" "$STAGE/AGENTS.md"
-    nemoclaw "$SANDBOX" upload "$STAGE/AGENTS.md" "$dir" \
-      && log "  persona -> $dir/AGENTS.md ($id)" \
-      || echo "  (upload $id persona to $dir failed — verify workspace path for your OpenClaw version)"
-  fi
+  b64="$(base64 < "$REPO/workspaces/$id.md" | tr -d '\n')"
+  # If a prior run left workspace-<id> as a FILE, remove it; then ensure the dir; then write inside.
+  nemoclaw "$SANDBOX" exec --no-tty -- sh -c "d='$dir'; [ -f \"\$d\" ] && rm -f \"\$d\"; mkdir -p \"\$d\"; printf %s '$b64' | base64 -d > \"\$d/AGENTS.md\"" \
+    && log "  persona -> $dir/AGENTS.md ($id)" \
+    || echo "  (write $id persona to $dir failed)"
 done
-rm -rf "$STAGE"
 nemoclaw "$SANDBOX" recover
 
 log "Done. namespace=$NS"
