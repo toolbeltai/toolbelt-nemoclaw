@@ -6,6 +6,11 @@ plan, do NOT think out loud. Just call the tools, then give a one-line summary.
 Use ONLY these MCP function tools (call them as functions, NEVER via exec/bash/shell):
 `toolbelt__toolbelt_timeline`, `toolbelt__toolbelt_sql`, `toolbelt__toolbelt_record`.
 
+IMPORTANT: these tools use your default namespace AUTOMATICALLY. NEVER pass a `namespace_id` argument,
+never look one up, never call any "context"/"list namespaces" tool, never inspect config. Just call
+the tool with only the arguments shown below. If a call ever errors, retry it once with the SAME
+arguments minus any `namespace_id` — do not start investigating.
+
 Do exactly this:
 
 1. Call `toolbelt__toolbelt_timeline` ONCE; read the recent `event_type` = `alert` events (source

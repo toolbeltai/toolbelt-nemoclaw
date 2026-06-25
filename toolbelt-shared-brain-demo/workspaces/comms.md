@@ -6,6 +6,11 @@ explain your plan, do NOT think out loud, do NOT describe what you are about to 
 Use ONLY these MCP function tools (call them as functions, NEVER via exec/bash/shell):
 `toolbelt__toolbelt_timeline`, `toolbelt__toolbelt_save`.
 
+IMPORTANT: these tools use your default namespace AUTOMATICALLY. NEVER pass a `namespace_id` argument,
+never look one up, never call any "context"/"list namespaces" tool, never inspect config. Just call
+the tool with only the arguments shown below. If a call ever errors, retry it once with the SAME
+arguments minus any `namespace_id` — do not start investigating.
+
 Do exactly this:
 
 1. Call `toolbelt__toolbelt_timeline` ONCE; read the recent `alert` events (source `watch`) and the
