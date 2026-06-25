@@ -13,10 +13,13 @@
 #   ./provision.sh                 # full run, sourcing ./.env
 #   SKIP_ONBOARD=1 ./provision.sh  # sandbox already onboarded; do steps 2-4 only
 #
-# All commands are verified against tracked upstream NemoClaw:
-#   nemoclaw sandbox policy add <name> --from-file <f> --yes
-#   nemoclaw sandbox exec <name> --no-tty -- <cmd...>
-#   nemoclaw sandbox recover <name>
+# CLI grammar matches what is verified end-to-end on NemoClaw 0.0.67 in
+# toolbelt-shared-brain-demo/scripts/setup.sh (the sandbox name is POSITIONAL and
+# comes FIRST; there is no `nemoclaw sandbox <verb>` form):
+#   nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software --no-gpu --name <name>
+#   nemoclaw <name> policy-add --from-file <f> --yes
+#   nemoclaw <name> exec --no-tty -- <cmd...>
+#   nemoclaw <name> recover
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,16 +76,22 @@ if [ "${SKIP_ONBOARD:-0}" = "1" ]; then
   command -v nemoclaw >/dev/null 2>&1 || die "nemoclaw not installed but SKIP_ONBOARD=1"
 elif command -v nemoclaw >/dev/null 2>&1; then
   log "Step 1/4: nemoclaw present; onboarding sandbox '$SANDBOX'"
-  nemoclaw onboard --non-interactive
+  # v0.0.67: onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.
+  # --no-gpu is required on a box without a GPU; --yes* clears the license/confirm prompts.
+  nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software --no-gpu \
+    --name "$SANDBOX"
 else
   log "Step 1/4: installing + onboarding NemoClaw (provider: ${NEMOCLAW_PROVIDER:-unset})"
   [ -n "${NEMOCLAW_PROVIDER:-}" ] || die "NEMOCLAW_PROVIDER unset; set it in .env (see .env.example)"
+  [ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset; set it in .env (see .env.example)"
+  # The installer onboards non-interactively from NEMOCLAW_* env; NEMOCLAW_SANDBOX_NAME
+  # (exported above) names the sandbox it creates.
   curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash -s -- --non-interactive
 fi
 
 # --- Step 2: egress preset -------------------------------------------------
 log "Step 2/4: applying Toolbelt egress preset to '$SANDBOX'"
-nemoclaw sandbox policy add "$SANDBOX" --from-file "$EGRESS_PRESET" --yes
+nemoclaw "$SANDBOX" policy-add --from-file "$EGRESS_PRESET" --yes
 
 # --- Step 3: install Toolbelt inside the sandbox ---------------------------
 log "Step 3/4: installing Toolbelt in sandbox '$SANDBOX'"
@@ -94,13 +103,25 @@ env_prefix=(env)
 [ -n "${TOOLBELT_TOKEN:-}" ] && env_prefix+=("TOOLBELT_TOKEN=$TOOLBELT_TOKEN")
 [ -n "${TOOLBELT_HOST:-}" ]  && env_prefix+=("TOOLBELT_HOST=$TOOLBELT_HOST")
 if [ "${#env_prefix[@]}" -gt 1 ]; then
-  nemoclaw sandbox exec "$SANDBOX" --no-tty -- "${env_prefix[@]}" "${install_cmd[@]}"
+  nemoclaw "$SANDBOX" exec --no-tty -- "${env_prefix[@]}" "${install_cmd[@]}"
 else
-  nemoclaw sandbox exec "$SANDBOX" --no-tty -- "${install_cmd[@]}"
+  nemoclaw "$SANDBOX" exec --no-tty -- "${install_cmd[@]}"
 fi
 
 # --- Step 4: recover so OpenClaw reloads config + skill --------------------
 log "Step 4/4: recovering gateway so OpenClaw picks up the MCP server + skill"
-nemoclaw sandbox recover "$SANDBOX"
+nemoclaw "$SANDBOX" recover
 
-log "Done. Connect with: nemoclaw $SANDBOX connect  (then: openclaw tui)"
+# The Toolbelt MCP plugin registers asynchronously after recover. Give it time to
+# settle so the first agent turn doesn't race plugin load (see setup.sh for the race).
+log "  waiting for Toolbelt MCP to settle"
+sleep "${TOOLBELT_SETTLE_SECS:-30}"
+
+# Smoke check: confirm the Toolbelt skill actually landed in the sandbox. `recover`
+# succeeding does NOT prove the skill/MCP registered, so verify before claiming done.
+log "  verifying Toolbelt skill is present in '$SANDBOX'"
+if nemoclaw "$SANDBOX" exec --no-tty -- sh -c 'ls /sandbox/.openclaw/skills 2>/dev/null | grep -qi toolbelt'; then
+  log "Done. Toolbelt skill present. Connect with: nemoclaw $SANDBOX connect  (then: openclaw tui)"
+else
+  die "provisioned, but the Toolbelt skill was not found in '$SANDBOX'. Re-run step 3 (toolbelt install) and check the egress policy reaches app.toolbelt.ai."
+fi

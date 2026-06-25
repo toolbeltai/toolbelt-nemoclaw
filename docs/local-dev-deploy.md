@@ -102,7 +102,7 @@ The sandbox network policy is an allowlist. ClawHub is already permitted by the 
 that host is allowlisted. Apply our version-controlled egress preset to the running sandbox; this
 does **not** require forking NemoClaw's blueprint:
 ```bash
-nemoclaw sandbox policy add toolbelt --from-file ./policy/toolbelt-egress.yaml --yes
+nemoclaw toolbelt policy-add --from-file ./policy/toolbelt-egress.yaml --yes
 # (use --dry-run first to preview the merged policy)
 ```
 NemoClaw merges the preset's `network_policies` entries onto the sandbox's live policy by name.
@@ -185,9 +185,9 @@ just the `toolbelt` skill.
 
 These were not exercisable in the constrained test environment and should be confirmed on a real
 box during the first deploy:
-- The exact in-sandbox command to run `toolbelt install` (shell via `nemoclaw <name> connect`
-  vs. a one-shot exec subcommand).
-- That `nemoclaw sandbox policy add <name> --from-file ./policy/toolbelt-egress.yaml` merges cleanly
+- The exact in-sandbox command to run `toolbelt install` (one-shot exec:
+  `nemoclaw <name> exec --no-tty -- npx -y @toolbeltai/cli@latest install --client openclaw`).
+- That `nemoclaw <name> policy-add --from-file ./policy/toolbelt-egress.yaml --yes` merges cleanly
   and the agent then reaches `mcp.toolbelt.ai` at runtime (the preset format is verified against
   upstream; the live apply + reachability is what to confirm).
 - An end-to-end agent turn through Haiku that calls a Toolbelt tool.
