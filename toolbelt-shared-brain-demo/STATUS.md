@@ -88,6 +88,44 @@ THIS is what to file upstream (NemoClaw/OpenClaw): "agent turn hangs with no out
 the gateway stays responsive," with evidence: clean init logs, no error, gateway answers exec instantly,
 turn never returns. NOT a mkdir bug.
 
+## ROOT CAUSE FOUND 2026-06-25: it IS NemoClaw #5237 (sessions_spawn dial-back), in TWO layers
+
+The spawn failure is the loopback gateway dial-back bug from NemoClaw issue #5237 / PR #5238.
+PR #5238 merged into v0.0.65, so our 0.0.67 HAS it — but it does NOT engage here, and even forcing
+it past layer 1 reveals an incomplete layer 2. Full chain, all evidence-backed:
+
+LAYER 1 — network (sessions_spawn child can't reach the gateway):
+  - PR #5238 moves OPENCLAW_GATEWAY_URL off loopback to the sandbox eth0 (e.g. 10.200.0.2) because the
+    OpenShell L7 proxy hard-blocks loopback dial-backs from the enforced process tree (-> WS 1006).
+  - It derives the host via `hostname -I` (nemoclaw-start.sh:352). In OUR sandbox `hostname -I` returns
+    EMPTY (confirmed on a fresh create), so it falls back to loopback (line 354-355) = the broken state.
+  - Its only escape hatch, NEMOCLAW_GATEWAY_WS_HOST, is NOT forwarded into the sandbox by onboard
+    (sandbox-create-launch.js forwards NEMOCLAW_PROXY_HOST but not the gateway WS host). So the
+    documented override is unreachable from the host. <- gap #1 in PR #5238.
+  - OUR FIX (committed): scripts/patch-forward-gateway-ws-host.sh forwards NEMOCLAW_GATEWAY_WS_HOST;
+    .env sets it to 10.200.0.2 + pins NEMOCLAW_DASHBOARD_PORT=18888; policy.yaml allowlists the
+    dial-back to 10.200.0.2:18888 (base policy only covers 18789/18790 <- gap #1b for custom ports).
+  - RESULT: VERIFIED FIXED. GW_URL flipped ws://127.0.0.1:18794 -> ws://10.200.0.2:18888, and the
+    gateway log now shows the child CONNECTING from 10.200.0.2 (no more 1006).
+
+LAYER 2 — auth (child reaches the gateway but is rejected):
+  - The child now connects from 10.200.0.2 and is rejected with WS 1008
+    "pairing required: device is not approved yet" (gateway-persistent.log, peer=10.200.0.2->10.200.0.2:18888).
+  - The gateway's zero-config auth/pairing BYPASS is loopback-ONLY: server.impl:527 bypasses when
+    isLocalDirectRequest() is true, and isLocalDirectRequest (auth-CbKYHGo4.js:113) IGNORES
+    trustedProxies and returns true only for a LOOPBACK socket peer. So a 10.200.0.2 child gets no
+    bypass. <- the architectural tension: the L7 proxy blocks loopback dial-back, but the gateway only
+    auto-trusts loopback. PR #5238 reconciled the network path but NOT the auth path. <- gap #2.
+  - OPENCLAW_GATEWAY_TOKEN IS present in the sandbox env, but the spawn dial-back still hits 1008
+    (token not used on that connection, or device-pairing is required independently), and the auto-pair
+    watcher did not approve the eth0 device (no [auto-pair] approval line; two 1008s logged).
+
+NET: #5237's fix is incomplete for sandboxes where (a) hostname -I yields nothing, (b) a custom dashboard
+port is used, and (c) — even past those — the eth0 dial-back isn't covered by the loopback-only auth
+bypass. Our patch closes (a)+(b) and proves the child reaches the gateway; (c) remains and needs either
+an OpenClaw change (treat the sandbox's own eth0 as local in isLocalDirectRequest) or the spawn client to
+present OPENCLAW_GATEWAY_TOKEN on the dial-back. This is the precise, high-value upstream report.
+
 What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real data" story works
 via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
 is blocked on the spawn EEXIST.
