@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # run-brief.sh — drive the shared-brain demo as SIBLING agents (no main->spawn).
 #
-# Why siblings: NemoClaw's `sessions_spawn` (main spawning subagents) currently dies with an
-# EEXIST creating the subagent workspace dir (NemoClaw pre-provisions it, then spawn re-creates
-# it). Direct per-agent invocation does NOT go through that path and works. So instead of main
-# spawning the team, this driver invokes each agent directly, in sequence. They never talk to
-# each other; they coordinate through the shared Toolbelt timeline (the demo's actual thesis:
-# one shared brain, no agent-to-agent wiring). comms produces the final brief.
+# Why siblings (this is the PRIMARY orchestration for the demo): NemoClaw's `sessions_spawn`
+# (main spawning sub-agents IN the sandbox) is blocked by NemoClaw #5237 — the spawned child must
+# dial the gateway over the sandbox's eth0 (loopback is hard-blocked by the OpenShell L7 proxy),
+# but a non-loopback in-sandbox client gets no loopback auth-bypass, token auth does not satisfy
+# the gateway's mandatory device pairing, and the auto-pair watcher can't approve over that same
+# gated connection -> permanent WS 1008. (Full analysis in STATUS.md.) Host-driven turns avoid all
+# of this: `nemoclaw <sb> agent --agent <id>` runs EMBEDDED in the gateway (transport: embedded),
+# so there is no in-sandbox dial-back and no pairing. This driver therefore invokes each agent as
+# its own host-driven turn, in sequence. They never talk to each other; they coordinate through the
+# shared Toolbelt timeline (the demo's actual thesis: one shared brain, no agent-to-agent wiring).
+# comms produces the final brief.
 #
 # Usage: ./scripts/run-brief.sh
 set -uo pipefail
