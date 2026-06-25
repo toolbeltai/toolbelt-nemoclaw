@@ -153,6 +153,14 @@ for id in main watch exposure comms; do
 done
 nemoclaw "$SANDBOX" recover
 
+# Let the Toolbelt MCP plugin finish registering before the first agent turn. Without this,
+# the FIRST secondary-agent turn races plugin load: its tools.allow is evaluated before
+# toolbelt__* are registered ("allowlist contains unknown entries"), so that agent loses its
+# toolbelt tools and falls back to a code tool (watch recorded 0 alerts). A short settle wait
+# after recover makes the sandbox ready for an immediate run (and for cron-triggered runs).
+log "  waiting for Toolbelt MCP to settle (avoids first-turn tool-load race)"
+sleep 60
+
 log "Done. namespace=$NS"
 log "Connect: nemoclaw $SANDBOX connect   (then: openclaw tui)"
 log "Ask main: \"Give me the current severe-weather situation brief.\""

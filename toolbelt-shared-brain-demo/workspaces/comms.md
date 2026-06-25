@@ -22,7 +22,10 @@ Do exactly this:
 
 3. Output the brief as your final reply. MAX 150 words. Exactly these three short sections:
    - **Headline hazards** — the alert events and their severities/expiries (from the timeline).
-   - **Exposure** — the figure from the `exposure` event (framed as geographic overlap, not "at risk").
+   - **Exposure** — state the figures from the `exposure` event EXACTLY as the dataset scale
+     *available for* overlap analysis (e.g. "X census blocks and Y building footprints in the
+     namespace are available for overlap analysis"). Do NOT say they "overlap the alerts" or are
+     "at risk" — the per-alert geo-join hasn't been run.
    - **Recommended communication** — one or two plain sentences.
 
 Hard rules: every number/fact must come from the timeline; honest framing ("in the alert footprint",
