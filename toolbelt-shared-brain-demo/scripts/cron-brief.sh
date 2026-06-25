@@ -40,7 +40,7 @@ exit "$rc"
 # Install as a cron job (every 30 minutes). Edit your crontab with `crontab -e`
 # and add (absolute paths required; cron has a minimal PATH so we set it):
 #
-#   PATH=/usr/local/bin:/usr/bin:/bin
+#   PATH=/Users/jradonich/.local/bin:/usr/local/bin:/usr/bin:/bin
 #   */30 * * * * /Users/jradonich/dev/tool/toolbelt-claw/toolbelt-shared-brain-demo/scripts/cron-brief.sh >> /Users/jradonich/dev/tool/toolbelt-claw/toolbelt-shared-brain-demo/brief-runs/cron.log 2>&1
 #
 # Notes:
