@@ -122,9 +122,46 @@ LAYER 2 — auth (child reaches the gateway but is rejected):
 
 NET: #5237's fix is incomplete for sandboxes where (a) hostname -I yields nothing, (b) a custom dashboard
 port is used, and (c) — even past those — the eth0 dial-back isn't covered by the loopback-only auth
-bypass. Our patch closes (a)+(b) and proves the child reaches the gateway; (c) remains and needs either
-an OpenClaw change (treat the sandbox's own eth0 as local in isLocalDirectRequest) or the spawn client to
-present OPENCLAW_GATEWAY_TOKEN on the dial-back. This is the precise, high-value upstream report.
+bypass. Our patch closes (a)+(b) and proves the child reaches the gateway; (c) remains. This is the
+precise, high-value upstream report.
+
+## LAYER 2 fully diagnosed 2026-06-25: token auth CANNOT fix it; the auto-pair watcher is deadlocked
+
+Pursued the "make the child authenticate with the token instead of bypassing pairing" path (option 2).
+Conclusively DEAD END, with these tested facts:
+  - OPENCLAW_GATEWAY_TOKEN in the sandbox MATCHES gateway.auth.token (sha256 prefix equal). The child
+    HAS the right credential.
+  - Presenting that exact token via `openclaw ... --token <tok>` STILL fails with WS 1008
+    "pairing required: device is not approved yet" — over BOTH ws://10.200.0.2:18888 AND
+    ws://127.0.0.1:18888. So token auth does NOT bypass device pairing.
+  - Why loopback didn't help either: in this OpenShell sandbox, in-sandbox clients reach the gateway
+    THROUGH the bridge, so the gateway never sees a true-loopback socket peer. isLocalDirectRequest
+    (auth-CbKYHGo4.js) only returns true for a loopback peer, so its bypass can NEVER fire for an
+    in-sandbox client. => device pairing is MANDATORY for every in-sandbox gateway client here.
+  - The mechanism that is SUPPOSED to make this work — the auto-pair watcher (nemoclaw-start.sh
+    start_auto_pair, logs to /tmp/auto-pair.log) — is started unconditionally but approves NOTHING:
+    /tmp/auto-pair.log is empty and no [auto-pair] approved lines exist, despite many pending child
+    pairing requests (8231e39f, fd2ef670, 48d7bf0a, ...). Strong inference: the watcher itself now
+    dials OPENCLAW_GATEWAY_URL=eth0 to run `openclaw devices approve`, which ALSO requires pairing/creds
+    -> it can't authenticate to issue approvals -> the whole pairing flow is deadlocked. I.e. pointing
+    OPENCLAW_GATEWAY_URL at eth0 for EVERY in-sandbox client (to fix 1006) broke the watcher's own
+    approval path. (Also note onboard sets NEMOCLAW_DISABLE_DEVICE_AUTH=1 for instant dashboard access,
+    but that disable is controlUi/loopback-scoped and does NOT cover the non-loopback WS dial-back.)
+
+CONCLUSION (final): the spawn failure IS NemoClaw #5237, and PR #5238's fix is incomplete in a deep,
+architectural way for sandboxes where loopback-to-gateway is proxy-blocked:
+  - Layer 1 (network): children must dial eth0 (we fixed delivery of that). VERIFIED working.
+  - Layer 2 (auth): an eth0 (non-loopback) in-sandbox client gets NO loopback bypass, token auth does
+    NOT bypass mandatory device pairing, and the auto-pair watcher can't approve over the same
+    non-loopback URL -> no working auth path for spawned/in-sandbox children.
+Neither of our non-invasive levers closes layer 2: token auth is insufficient (tested), and the only
+remaining local fixes are (i) patch isLocalDirectRequest to treat the sandbox's own eth0 as local
+(an auth-weakening change; correctly blocked by the agent's security guard pending explicit operator
+approval), or (ii) an upstream NemoClaw/OpenClaw fix. RECOMMEND: file the upstream report. The proper
+upstream fix is for NemoClaw to give the auto-pair watcher (and/or spawned children) a privileged
+approval/auth path that does not depend on a pairing-gated non-loopback connection — e.g. a unix-socket
+or loopback-from-gateway-context approval channel, or have token auth satisfy the gateway for the
+sandbox's own bridge address.
 
 What this means for a demo TODAY: the "Toolbelt on sandboxed Nemotron over real data" story works
 via direct specialist invocation; the "secure AND multi-agent collaboration via shared brain" story
