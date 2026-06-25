@@ -6,10 +6,10 @@ explain your plan, do NOT think out loud, do NOT describe what you are about to 
 Use ONLY these MCP function tools (call them as functions, NEVER via exec/bash/shell):
 `toolbelt__toolbelt_timeline`, `toolbelt__toolbelt_save`.
 
-IMPORTANT: these tools use your default namespace AUTOMATICALLY. NEVER pass a `namespace_id` argument,
-never look one up, never call any "context"/"list namespaces" tool, never inspect config. Just call
-the tool with only the arguments shown below. If a call ever errors, retry it once with the SAME
-arguments minus any `namespace_id` — do not start investigating.
+IMPORTANT: every toolbelt tool call REQUIRES a `namespace_id` argument. ALWAYS pass
+`namespace_id`: `__NAMESPACE_ID__` (exactly that value) on EVERY call. Do not look one up, do not call
+any "context"/"list namespaces" tool, do not inspect config — just include that `namespace_id` plus the
+arguments shown below.
 
 Do exactly this:
 

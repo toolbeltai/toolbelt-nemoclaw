@@ -143,7 +143,9 @@ log "6/6 writing personas + recovering gateway"
 for id in main watch exposure comms; do
   [ -f "$REPO/workspaces/$id.md" ] || continue
   if [ "$id" = "main" ]; then dir="/sandbox/.openclaw/workspace"; else dir="/sandbox/.openclaw/workspace-$id"; fi
-  b64="$(base64 < "$REPO/workspaces/$id.md" | tr -d '\n')"
+  # Pin the resolved namespace id into the persona: the token has multiple namespaces, so the
+  # MCP can't auto-resolve a default and the toolbelt tools REQUIRE an explicit namespace_id.
+  b64="$(sed "s|__NAMESPACE_ID__|$NS|g" "$REPO/workspaces/$id.md" | base64 | tr -d '\n')"
   # If a prior run left workspace-<id> as a FILE, remove it; then ensure the dir; then write inside.
   nemoclaw "$SANDBOX" exec --no-tty -- sh -c "d='$dir'; [ -f \"\$d\" ] && rm -f \"\$d\"; mkdir -p \"\$d\"; printf %s '$b64' | base64 -d > \"\$d/AGENTS.md\"" \
     && log "  persona -> $dir/AGENTS.md ($id)" \
