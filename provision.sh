@@ -51,7 +51,12 @@ fi
 : "${NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE:=1}"
 : "${NEMOCLAW_SANDBOX_NAME:=toolbelt}"
 : "${TOOLBELT_CLI_REF:=latest}"
-export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE NEMOCLAW_SANDBOX_NAME
+# Pin the NemoClaw release the installer fetches. The installer reads
+# NEMOCLAW_INSTALL_TAG (a git ref; tags are v-prefixed, e.g. v0.0.67) and otherwise
+# defaults to the floating `lkg` ref — so without this our verified 0.0.67 CLI
+# grammar could silently drift. Override in .env to bump deliberately.
+: "${NEMOCLAW_INSTALL_TAG:=v0.0.67}"
+export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE NEMOCLAW_SANDBOX_NAME NEMOCLAW_INSTALL_TAG
 
 # The Toolbelt CLI builds request URLs with `new URL(host + path)`, which throws on a
 # scheme-less host. Normalize so TOOLBELT_HOST=app.toolbelt.ai still works.
@@ -76,6 +81,13 @@ if [ "${SKIP_ONBOARD:-0}" = "1" ]; then
   command -v nemoclaw >/dev/null 2>&1 || die "nemoclaw not installed but SKIP_ONBOARD=1"
 elif command -v nemoclaw >/dev/null 2>&1; then
   log "Step 1/4: nemoclaw present; onboarding sandbox '$SANDBOX'"
+  # Our CLI grammar is verified against $NEMOCLAW_INSTALL_TAG. A pre-existing install
+  # is NOT reinstalled here, so the pin can't enforce it — warn (don't fail) on drift.
+  have_ver="$(nemoclaw --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  want_ver="${NEMOCLAW_INSTALL_TAG#v}"
+  if [ -n "$have_ver" ] && [ "$have_ver" != "$want_ver" ]; then
+    printf '\033[1;33mWARN: nemoclaw %s installed, but grammar is verified against %s. Set NEMOCLAW_INSTALL_TAG or reinstall if onboarding fails.\033[0m\n' "$have_ver" "$want_ver" >&2
+  fi
   # v0.0.67: onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.
   # --no-gpu is required on a box without a GPU; --yes* clears the license/confirm prompts.
   nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software --no-gpu \
@@ -85,7 +97,8 @@ else
   [ -n "${NEMOCLAW_PROVIDER:-}" ] || die "NEMOCLAW_PROVIDER unset; set it in .env (see .env.example)"
   [ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset; set it in .env (see .env.example)"
   # The installer onboards non-interactively from NEMOCLAW_* env; NEMOCLAW_SANDBOX_NAME
-  # (exported above) names the sandbox it creates.
+  # names the sandbox and NEMOCLAW_INSTALL_TAG pins the release (both exported above).
+  log "  pinning NemoClaw release: $NEMOCLAW_INSTALL_TAG"
   curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash -s -- --non-interactive
 fi
 
