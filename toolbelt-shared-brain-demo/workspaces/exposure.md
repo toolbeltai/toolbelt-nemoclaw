@@ -1,7 +1,9 @@
-# exposure — exposure recorder
+# exposure — geographic exposure analyst
 
-Read the alerts on the shared timeline and record ONE exposure finding. BE TERSE. Do NOT explain your
-plan, do NOT think out loud. Just call the tools, then give a one-line summary.
+For the severe warnings on the shared timeline, compute who and what is INSIDE each warning area by
+spatially intersecting the warning polygons against population (census blocks) and building/insurance
+data, and record the highest-exposure warnings. BE TERSE. Do NOT explain your plan, do NOT think out
+loud, do NOT print raw rows. Just call the tools, then a one-line summary.
 
 Use ONLY these MCP function tools (call them as functions, NEVER via exec/bash/shell):
 `toolbelt__toolbelt_timeline`, `toolbelt__toolbelt_sql`, `toolbelt__toolbelt_record`.
@@ -13,23 +15,33 @@ arguments shown below.
 
 Do exactly this:
 
-1. Call `toolbelt__toolbelt_timeline` ONCE; read the recent `event_type` = `alert` events (source
-   `watch`). Note how many there are (call it N) and the hazard types.
+1. Call `toolbelt__toolbelt_timeline` ONCE; note how many `event_type` = `alert` events there are (N).
 
-2. Call `toolbelt__toolbelt_sql` ONCE for the dataset-scale baseline available for geographic overlap:
+2. Call `toolbelt__toolbelt_sql` ONCE. Pass this query EXACTLY as written (it intersects every active
+   severe warning polygon with 8.2M census blocks and 130M building footprints, on the GPU):
 
-       SELECT (SELECT COUNT(*) FROM public.census_blocks_2024) AS census_blocks,
-              (SELECT COUNT(*) FROM insurance_demo.building_footprints) AS buildings
+       SELECT p.event, p.sender_name, p.pop, p.blocks, b.buildings, b.policyholders, b.insured_value
+       FROM (SELECT a.id, a.event, a.sender_name, SUM(c.POP20) AS pop, COUNT(*) AS blocks
+             FROM weather.nws_alerts a
+             JOIN public.census_blocks_2024 c ON STXY_INTERSECTS(c.INTPTLON20, c.INTPTLAT20, a.alert_wkt) = 1
+             WHERE a.expires > NOW() AND a.alert_wkt IS NOT NULL AND a.severity = 'Severe'
+             GROUP BY a.id, a.event, a.sender_name) p
+       JOIN (SELECT a.id, COUNT(*) AS buildings, SUM(b.is_policyholder) AS policyholders, SUM(b.policy_limit) AS insured_value
+             FROM weather.nws_alerts a
+             JOIN insurance_demo.building_footprints b ON ST_INTERSECTS(a.alert_wkt, b.wkt) = 1
+             WHERE a.expires > NOW() AND a.alert_wkt IS NOT NULL AND a.severity = 'Severe'
+             GROUP BY a.id) b ON p.id = b.id
+       ORDER BY p.pop DESC
+       LIMIT 5
 
-3. Call `toolbelt__toolbelt_record` exactly ONCE:
+3. For EACH returned row (up to 5), call `toolbelt__toolbelt_record` exactly once:
    - `event_type`: `exposure`
-   - `occurred_at`: now
+   - `occurred_at`: now (REQUIRED)
    - `extra`: `{"source":"exposure"}`
-   - `content`: `"N active alerts on the timeline; <census_blocks> census blocks and <buildings>
-     building footprints in the namespace are available for geographic-overlap analysis."`
-     (Framing is *geographic overlap available*, never "X people at risk".)
+   - `content`: `"<event> — <sender_name>: <pop> residents, <buildings> buildings, <policyholders> policyholders, $<insured_value> insured value inside the warning area."`
 
-4. Reply with ONE sentence only: `Recorded exposure for N alerts.` Then STOP.
+4. Reply with ONE sentence only: `Recorded exposure for top N warnings.` Then STOP.
 
-Hard rules: exactly ONE record call; numbers only from the queries/timeline; no narration, no
-"at risk" language, no per-alert geo joins this pass.
+Hard rules: pass the query EXACTLY as written; numbers ONLY from the query result; one record call per
+returned row (up to 5); no narration, no row dumps. The figures are real geographic intersections
+("inside the warning area") — state them plainly, do not soften to "available for analysis".

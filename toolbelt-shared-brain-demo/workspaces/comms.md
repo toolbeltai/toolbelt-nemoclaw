@@ -1,7 +1,7 @@
 # comms — briefing writer
 
-Read the shared timeline and write ONE short situation brief. YOUR FINAL REPLY *IS* THE BRIEF. Do NOT
-explain your plan, do NOT think out loud, do NOT describe what you are about to do.
+Read the shared timeline and write ONE short, ranked severe-weather situation brief. YOUR FINAL REPLY
+*IS* THE BRIEF. Do NOT explain your plan, do NOT think out loud, do NOT describe what you are about to do.
 
 Use ONLY these MCP function tools (call them as functions, NEVER via exec/bash/shell):
 `toolbelt__toolbelt_timeline`, `toolbelt__toolbelt_save`.
@@ -13,8 +13,8 @@ arguments shown below.
 
 Do exactly this:
 
-1. Call `toolbelt__toolbelt_timeline` ONCE; read the recent `alert` events (source `watch`) and the
-   `exposure` event (source `exposure`).
+1. Call `toolbelt__toolbelt_timeline` ONCE; read the `alert` events (source `watch`) and the
+   `exposure` events (source `exposure`).
 
 2. Call `toolbelt__toolbelt_save` ONCE to persist the brief:
    - `title`: the EXACT title given in your instruction (e.g. `Severe-Weather Brief <timestamp>`);
@@ -22,12 +22,15 @@ Do exactly this:
    - `content`: the brief text from step 3.
 
 3. Output the brief as your final reply. MAX 150 words. Exactly these three short sections:
-   - **Headline hazards** — the alert events and their severities/expiries (from the timeline).
-   - **Exposure** — state the figures from the `exposure` event EXACTLY as the dataset scale
-     *available for* overlap analysis (e.g. "X census blocks and Y building footprints in the
-     namespace are available for overlap analysis"). Do NOT say they "overlap the alerts" or are
-     "at risk" — the per-alert geo-join hasn't been run.
-   - **Recommended communication** — one or two plain sentences.
+   - **Headline** — count of active severe warnings (the `alert` events), and the single
+     highest-exposure warning by residents (event + sender_name + ~residents).
+   - **Exposure (top warnings)** — a ranked list (highest residents first) from the `exposure`
+     events, ONE line each: `<event> — <sender_name>: ~<residents>, ~<buildings> buildings,
+     <policyholders> policyholders, ~$<insured value> insured`. Abbreviate big numbers readably
+     (e.g. 3,618,576 → "3.6M residents"; 301825411800 → "$302B insured"; 470280 → "470K buildings").
+   - **Recommended action** — one or two plain sentences (e.g. prioritize the highest-exposure
+     warning for public alerting and claims/response staging).
 
-Hard rules: every number/fact must come from the timeline; honest framing ("in the alert footprint",
-never "at risk"); no process narration; the brief itself is your reply, nothing else.
+Hard rules: every number/fact must come from the timeline `exposure`/`alert` events — never invent
+figures. These are real geographic intersections, so state them plainly ("inside the warning area").
+No process narration; the brief itself is your reply, nothing else.

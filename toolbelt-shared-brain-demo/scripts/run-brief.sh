@@ -45,8 +45,8 @@ for line in (txt or "(no visible text)").splitlines():
 '
 }
 
-run_agent watch    "Record the current top active Severe/Extreme alerts to the shared timeline now. Follow your instructions exactly: one SQL query (LIMIT 6), one record call per row, then a one-line summary. Be terse, no narration."
-run_agent exposure "Read the alerts on the shared timeline and record one exposure finding now. Follow your instructions exactly: one timeline read, one SQL query, one record call, then a one-line summary. Be terse, no narration."
-run_agent comms    "Write the severe-weather situation brief now. Read the timeline, then save the brief with the EXACT title 'Severe-Weather Brief $RUN_TS', and output it as your reply (max 150 words: Headline hazards / Exposure / Recommended communication). Be terse, no narration; the brief itself is your reply."
+run_agent watch    "Record the active severe warnings that have a mapped area to the shared timeline now, following your instructions exactly. Be terse, no narration."
+run_agent exposure "Compute and record the geographic exposure for the active severe warnings now — population, buildings, policyholders, and insured value inside each warning area — following your instructions exactly. Be terse, no narration."
+run_agent comms    "Write the severe-weather situation brief now: read the timeline, save it with the EXACT title 'Severe-Weather Brief $RUN_TS', then output it as your reply, following your instructions exactly. Be terse, no narration; the brief itself is your reply."
 
 log "Done. Brief saved as 'Severe-Weather Brief $RUN_TS' in the namespace (and shown above)."
