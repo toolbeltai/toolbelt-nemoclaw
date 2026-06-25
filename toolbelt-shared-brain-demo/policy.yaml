@@ -14,7 +14,11 @@ network_policies:
       - host: app.toolbelt.ai
         port: 443
         access: full
-      # Nemotron inference via build.nvidia.com.
+      # Inference endpoints. Anthropic (Haiku) is the active provider; the NVIDIA
+      # build hosts are kept so switching NEMOCLAW_PROVIDER back needs no policy edit.
+      - host: api.anthropic.com
+        port: 443
+        access: full
       - host: integrate.api.nvidia.com
         port: 443
         access: full
