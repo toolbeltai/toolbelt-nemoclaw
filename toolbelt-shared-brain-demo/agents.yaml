@@ -35,22 +35,18 @@ agents:
   # watch: query active severe-weather alerts, record them to the shared timeline.
   - id: watch
     tools:
+      # Toolbelt tools ONLY — no read/exec/code tools. Llama 3.3 70b otherwise wanders
+      # into the code-execution tool (tool_search_code) + HEARTBEAT.md and loops to timeout.
       profile: coding
       allow:
-        - read
-        - exec
-        - toolbelt__toolbelt_context
         - toolbelt__toolbelt_sql
         - toolbelt__toolbelt_record
-        - toolbelt__toolbelt_timeline
 
   # exposure: read alerts from the brain, geo-join population/buildings, record findings.
   - id: exposure
     tools:
       profile: coding
       allow:
-        - read
-        - exec
         - toolbelt__toolbelt_timeline
         - toolbelt__toolbelt_sql
         - toolbelt__toolbelt_record
@@ -60,9 +56,5 @@ agents:
     tools:
       profile: coding
       allow:
-        - read
-        - exec
         - toolbelt__toolbelt_timeline
-        - toolbelt__toolbelt_entity
-        - toolbelt__toolbelt_record
         - toolbelt__toolbelt_save
