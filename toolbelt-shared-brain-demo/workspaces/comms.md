@@ -13,8 +13,15 @@ arguments shown below.
 
 Do exactly this:
 
-1. Call `toolbelt__toolbelt_timeline` ONCE; read the `alert` events (source `watch`) and the
-   `exposure` events (source `exposure`).
+1. Call `toolbelt__toolbelt_timeline` ONCE. Pass ONLY `namespace_id` — do NOT pass `source`,
+   `event_type`, `entity`, `since`, or `until`. (The tool's `source` filter means PROVENANCE like
+   `agent:claude`, NOT `watch`/`exposure`; filtering by those returns an empty list.) From the rows
+   returned, separate the two kinds YOURSELF by their `event_type` field:
+   - `alert` events — recorded by the watch agent (each also has `extra.source` = `watch`).
+   - `exposure` events — recorded by the exposure agent (each also has `extra.source` = `exposure`).
+   The timeline is newest-first and accumulates across runs; use the MOST RECENT batch of each kind.
+   If there are genuinely zero `alert` AND zero `exposure` events in the returned rows, only THEN
+   report no active warnings.
 
 2. Call `toolbelt__toolbelt_save` ONCE to persist the brief:
    - `title`: the EXACT title given in your instruction (e.g. `Severe-Weather Brief <timestamp>`);
