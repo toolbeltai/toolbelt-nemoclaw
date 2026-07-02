@@ -33,12 +33,13 @@ See `README.md` for the architecture and `STATUS.md` for the full build history 
 > Note: `nemoclaw-k8s/` (image + `provision.sh`) and `run-anywhere/` are SEPARATE deployment
 > topologies (Kubernetes-with-sandbox, and plain-container-without-sandbox). For a normal host, use
 > the `scripts/setup.sh` flow below. `nemoclaw-k8s/provision.sh` is currently STALE — it predates the
-> v0.0.67 CLI corrections in `scripts/setup.sh` (it still uses the non-existent `nemoclaw sandbox …`
+> current CLI corrections in `scripts/setup.sh` (it still uses the non-existent `nemoclaw sandbox …`
 > commands) and would need the same fixes before use.
 - An **inference API key**:
-  - Recommended: an **Anthropic** key (`sk-ant-...`) for Claude Haiku — reliable, fast tool-calling.
-  - Alternative: an NVIDIA build.nvidia.com key (`nvapi-...`) — see the NVIDIA block in `.env.example`
-    (less reliable here; Nemotron is a reasoning MoE that tends to loop on terse tool tasks).
+  - Default: an **NVIDIA** build.nvidia.com key (`nvapi-...`) for Nemotron — this is a NemoClaw demo, so
+    it runs on NVIDIA inference by default (`setup.sh` applies the #976 tool-call patch automatically).
+  - Fallback: an Anthropic key (`sk-ant-...`) for Claude Haiku — reliable, fast tool-calling if you
+    don't have an NVIDIA key or hit Nemotron flakiness. See the fallback block in `.env.example`.
 - A **Toolbelt** account is optional — `setup.sh` can provision an anonymous token during install.
 
 ## First-time setup
@@ -48,8 +49,8 @@ git clone <repo-url>
 cd toolbelt-shared-brain-demo
 
 cp .env.example .env
-#   edit .env: set NEMOCLAW_PROVIDER_KEY to your sk-ant-... key
-#   (defaults are NEMOCLAW_PROVIDER=anthropic, NEMOCLAW_MODEL=claude-haiku-4-5, heartbeat off)
+#   edit .env: set NEMOCLAW_PROVIDER_KEY to your nvapi-... key
+#   (defaults are NEMOCLAW_PROVIDER=build, NEMOCLAW_MODEL=nvidia/nemotron-3-super-120b-a12b, heartbeat off)
 
 ./scripts/setup.sh
 #   onboards the sandbox, applies the deny-by-default egress policy, installs the Toolbelt MCP +
@@ -103,7 +104,8 @@ process), `install-cron.sh` writes the line to `brief-runs/crontab.proposed` and
 - **Namespace:** the token may accumulate multiple namespaces across runs; `setup.sh` always resolves
   the "Default Workspace" (or oldest) and pins that id into the personas, so agents target the seeded
   brain. If you want a clean namespace, create a dedicated Toolbelt token scoped to one namespace.
-- **Cost/latency:** on Haiku each run is a handful of short turns (seconds), so every-30-min is cheap.
+- **Cost/latency:** each run is a handful of short turns. On the free NVIDIA build tier Nemotron turns
+  can be slower (and occasionally hang; re-run if so); on the Haiku fallback they finish in seconds.
 
 ## Troubleshooting
 

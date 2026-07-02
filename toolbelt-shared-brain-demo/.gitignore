@@ -1,1 +1,3 @@
 brief-runs/
+.env
+.env.bak*

@@ -27,7 +27,12 @@ log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 run_agent() {
   local id="$1" msg="$2"
   log "$id"
-  nemoclaw "$SB" agent --agent "$id" --json --session-id "${id}-brief" -m "$msg" 2>&1 \
+  # --thinking off: the Nemotron models on build.nvidia.com are reasoning models; with thinking ON
+  # they leak their chain-of-thought as the visible answer and never emit the tool calls (exposure/
+  # comms stall, super-120b degenerates into token salad). NemoClaw's reasoning:false does NOT force
+  # thinking off at inference time for the managed NVIDIA provider, but OpenClaw's --thinking off flag
+  # does. This is what makes the terse tool-calling turns reliable.
+  nemoclaw "$SB" agent --agent "$id" --json --thinking off --session-id "${id}-brief" -m "$msg" 2>&1 \
     | grep -vaE "UNDICI|trace-warnings" \
     | python3 -c '
 import sys,json

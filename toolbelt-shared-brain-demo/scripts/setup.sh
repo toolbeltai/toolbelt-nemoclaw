@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh — stand up the Toolbelt shared-brain demo on NemoClaw (>= 0.0.67).
+# setup.sh — stand up the Toolbelt shared-brain demo on a recent NemoClaw.
 #
 # Rewritten against VERIFIED mechanics (the original assumed CLI commands/flags that
 # don't exist). What changed and why:
@@ -9,12 +9,12 @@
 #     verified working and adopts by reference (no data movement).
 #   - Agent topology: the original used `nemoclaw sandbox config set --from-file` to apply
 #     the whole openclaw.json — config set is KEY/VALUE only. We bake the topology with
-#     `nemoclaw onboard --agents agents.yaml` (NemoClaw >= 0.0.67), the supported path.
+#     `nemoclaw onboard --agents agents.yaml` (recent NemoClaw), the supported path.
 #   - TOOLBELT_HOST: normalized to include a scheme (a bare host throws "Failed to parse URL").
 #   - MCP namespace pinning: set via `config set --key mcp.servers.toolbelt.url` (key/value).
 #   - Personas: copied in with `nemoclaw sandbox upload` (the original had no mechanism).
 #
-# Requires NemoClaw >= 0.0.67 (for `onboard --agents` / `sandbox upload`). Check: nemoclaw --version
+# Requires a recent NemoClaw with `onboard --agents` and `sandbox upload`. Check: nemoclaw --version
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -f "$REPO/.env" ] && { set -a; . "$REPO/.env"; set +a; }
@@ -22,8 +22,9 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${NEMOCLAW_SANDBOX_NAME:=toolbelt-shared-brain}"
 : "${NEMOCLAW_NON_INTERACTIVE:=1}"
 : "${NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE:=1}"
-: "${NEMOCLAW_MODEL:=nvidia/nemotron-3-super-120b-a12b}"
-export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
+: "${NEMOCLAW_PROVIDER:=build}"
+: "${NEMOCLAW_MODEL:=meta/llama-3.3-70b-instruct}"   # non-reasoning; Nemotron reasoning models fail the comms synthesis turn (see STATUS.md)
+export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE NEMOCLAW_PROVIDER NEMOCLAW_MODEL
 SANDBOX="$NEMOCLAW_SANDBOX_NAME"
 
 # Normalize host: the Toolbelt CLI does `new URL(host + path)`; a scheme-less host throws.
@@ -35,6 +36,11 @@ die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 command -v curl >/dev/null    || die "curl required"
 command -v python3 >/dev/null || die "python3 required"
 command -v nemoclaw >/dev/null || die "nemoclaw not installed (run the NemoClaw quickstart first)"
+# Feature guard: this flow bakes the agent topology with `onboard --agents`. Older CLIs (e.g. 0.0.5x)
+# lack that flag and would fail partway through onboard, so fail fast with a clear, actionable message
+# rather than checking a version number (feature-detect is robust across the 0.0.x -> 0.1.x bump).
+nemoclaw onboard --help 2>&1 | grep -q -- '--agents' \
+  || die "this NemoClaw ($(nemoclaw --version 2>/dev/null | head -1)) lacks 'onboard --agents' — update with 'nemoclaw update' (needs a recent NemoClaw)"
 
 jget() { python3 -c 'import sys,json
 try: d=json.loads(sys.stdin.read(),strict=False)
@@ -99,7 +105,7 @@ done
 # BEFORE onboard, so Nemotron tool calls come back structured (not raw text the agent
 # then tries to exec). The API flavor is baked at onboard time.
 log "3/6 patching build provider for tool-calling, then onboarding (Nemotron from .env)"
-[ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset (build.nvidia.com key) — see .env"
+[ -n "${NEMOCLAW_PROVIDER_KEY:-}" ] || die "NEMOCLAW_PROVIDER_KEY unset (key for provider '$NEMOCLAW_PROVIDER': nvapi-... for build, sk-ant-... for anthropic) — see .env"
 # The #976 tool-call patch only matters for the NVIDIA `build` provider (it forces chat-completions
 # so Nemotron tool calls parse). For anthropic/openai/etc. it's irrelevant and the onboard.js anchor
 # may not exist, so only apply it when actually using the build provider.
@@ -108,7 +114,7 @@ if [ "${NEMOCLAW_PROVIDER:-}" = "build" ]; then
 fi
 RENDERED_AGENTS="${TMPDIR:-/tmp}/agents.toolbelt.$$.yaml"
 sed "s|__MODEL_REF__|$NEMOCLAW_MODEL|g" "$REPO/agents.yaml" > "$RENDERED_AGENTS"
-# v0.0.67 CLI: onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.
+# onboard bakes the named sandbox; provider/model/key come from NEMOCLAW_* env.
 nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software --no-gpu \
   --name "$SANDBOX" --agents "$RENDERED_AGENTS"
 
@@ -118,7 +124,12 @@ log "4/6 applying egress policy"
 nemoclaw "$SANDBOX" policy-add --from-file "$REPO/policy.yaml" --yes
 
 # --- 5. install the Toolbelt skill + MCP server inside the sandbox ---
+# The install runs `npx @toolbeltai/cli`, which needs the npm registry. Don't rely on onboard's
+# balanced tier having added the `npm` preset: on a re-run against an already-hardened sandbox
+# (npm removed by the step below), onboard reuses the sandbox and does NOT re-add it, so the
+# install 403s. Explicitly ensure npm egress here; the hardening step then removes it again.
 log "5/6 installing Toolbelt skill in sandbox '$SANDBOX'"
+nemoclaw "$SANDBOX" policy-add npm --yes >/dev/null 2>&1 || true
 nemoclaw "$SANDBOX" exec --no-tty -- env \
   TOOLBELT_TOKEN="$TOOLBELT_TOKEN" TOOLBELT_HOST="$HOST" \
   npx -y @toolbeltai/cli@latest install --client openclaw
@@ -126,13 +137,28 @@ nemoclaw "$SANDBOX" exec --no-tty -- env \
 # Disable the tool-search surface. We do NOT pin the MCP url to a /ns/<id>/ path: the
 # Toolbelt MCP ignores that path and resolves the namespace from the token's default
 # (which step 2 seeded), so the installer's bare /mcp url already points the agents at the
-# shared brain. v0.0.67 has no host-side `config set`, and in-sandbox `openclaw config set`
+# shared brain. The CLI has no host-side `config set`, and in-sandbox `openclaw config set`
 # is guarded ("cannot modify config inside the sandbox"); but openclaw.json IS writable via
 # exec and the edit survives `recover` (not a rebuild, which is fine for a demo).
 #   - tools.toolSearch=false -> expose toolbelt__*/sessions_spawn directly; the compact
 #     tool-search surface routes every tool through one call Nemotron can't drive.
 log "  disabling tool-search surface"
 nemoclaw "$SANDBOX" exec --no-tty -- python3 -c 'import json,pathlib; p=pathlib.Path("/sandbox/.openclaw/openclaw.json"); c=json.loads(p.read_text()); c.setdefault("tools",{})["toolSearch"]=False; p.write_text(json.dumps(c,indent=2)); print("  tools.toolSearch=false")'
+
+# Harden egress: `onboard` non-interactively applies its "balanced" policy tier, which WIDENS the
+# sandbox egress with these presets (npm, pypi, huggingface, brew, weather, openclaw-pricing) —
+# opening api.weather.gov, open-meteo, github, openrouter, npm/pypi/hf, etc. That breaks the demo's
+# core claim: deny-by-default with ONLY the Toolbelt brain + inference hosts reachable. `policy-add`
+# above only ADDS our preset (it can't replace), so we remove the tier's widening presets here. This
+# MUST run AFTER the skill install above (that step needs the npm registry). policy-remove is a no-op
+# for a preset that isn't applied, so the list is safe even if the tier's contents change.
+log "  hardening egress: removing onboard's balanced-tier widening presets (deny-all-except-brain)"
+for p in npm pypi huggingface brew weather openclaw-pricing; do
+  nemoclaw "$SANDBOX" policy-remove "$p" --yes >/dev/null 2>&1 && log "    removed preset: $p" || true
+done
+# Show the resulting allowlist so any drift (a new widening preset) is visible in the setup output.
+log "  effective egress allowlist (should be only the toolbelt-shared-brain hosts):"
+nemoclaw "$SANDBOX" policy-explain 2>/dev/null | grep -iE "\[custom\]|^ *hosts:" | sed 's/^/    /' || true
 
 # --- 6. write personas + recover so OpenClaw reloads config + skill ---
 log "6/6 writing personas + recovering gateway"
