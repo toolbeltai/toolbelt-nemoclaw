@@ -96,7 +96,7 @@ main
 ## Setup
 
 ```bash
-cp .env.example .env          # set NVIDIA_API_KEY + (optional) TOOLBELT_TOKEN
+cp .env.example .env          # set NEMOCLAW_PROVIDER_KEY (nvapi-... for build.nvidia.com) + (optional) TOOLBELT_TOKEN
 ./scripts/setup.sh            # onboard NemoClaw, adopt the datasets, install the Toolbelt skill, apply policy
 ```
 `setup.sh`:

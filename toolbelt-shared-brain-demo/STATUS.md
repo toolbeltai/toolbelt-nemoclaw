@@ -11,6 +11,141 @@ A multi-agent NemoClaw/OpenClaw demo: a `main` coordinator spawns specialists
 Inference is Nemotron via build.nvidia.com (no GPU). `scripts/setup.sh` stands it up;
 `nemoclaw-k8s/` and `run-anywhere/` are the deployment variants.
 
+## OPEN: watch never records + watch turns hang (2026-07-02, on llama)
+
+Two remaining reliability problems found while verifying clean-namespace runs:
+
+1. **`watch` records zero alerts (deterministic).** Verified on a clean namespace (10a81ef4) with a
+   real verified-tier token: `watch`'s `toolbelt_sql` call fails 2/2 runs (`calls=1 failures=1`, no
+   `{"success":...}` result stored -> it errors at the tool/MCP layer, not a SQL result). Because comms
+   counts `alert` events on the timeline, the brief always reports "0 active severe warnings" EVEN
+   THOUGH the data has active ones: `exposure`'s query (`... WHERE a.expires > NOW() AND a.severity =
+   'Severe' ...`) returns 5 (Paducah KY 271k pop, Twin Cities MN ~$24B insured, La Crosse WI, ...). So
+   "0 active" is a WATCH BUG, not a dataset property (correcting the earlier "static snapshot" guess).
+   - TRUE ROOT CAUSE (proven, supersedes the multi-line theory): a KINETICA WORKER REQUEST-LIMIT
+     EXHAUSTION on the namespace's backing instance. watch's `toolbelt_record` fails with:
+       `ResourceExhausted: Worker local total request limit reached (17/16)`
+     i.e. all 16 worker request slots are occupied and the new request (17th) is rejected. Confirmed
+     PERSISTENT and SERVER-SIDE: reproduces with ZERO client-side overlap (all local processes killed),
+     so ~16 requests are stuck/leaked on the worker and not being reclaimed, almost certainly residue of
+     this session's many hung/killed run-brief + agent turns. Reads squeak through (direct MCP
+     toolbelt_sql returns live warnings), writes/records hit the full worker and fail.
+   - So it is NOT the demo code / query / model / multi-line SQL. The query + data + pipeline are proven
+     (single-line query via direct MCP returns Des Moines IA / Aberdeen SD / Bismarck ND / La Crosse WI).
+     The single-line watch.md change is harmless/kept but was NOT the fix.
+   - FIX (server-side / infra): reclaim or time out the stuck worker requests, restart the Kinetica
+     instance behind this namespace, or raise the worker request limit (16). Once the worker has free
+     slots, watch's toolbelt_record succeeds and the brief populates. AVOID overlapping/concurrent runs
+     against one namespace, they saturate (and can leak) the 16-slot worker.
+   - Verify the data layer anytime WITHOUT the agent: MCP handshake then tools/call. Recipe: POST
+     https://mcp.toolbelt.ai/mcp initialize (grab Mcp-Session-Id header) -> POST
+     notifications/initialized -> POST tools/call {name:toolbelt_sql|toolbelt_timeline, arguments:{...}}.
+2. **Agent turns hang indefinitely.** Single `watch` turns (and `run-brief.sh`, which starts with
+   watch) hang for 20+ min with no output and no error on this host/free-tier; background runs then get
+   killed (exit 144). Intermittent: some runs completed earlier, some hang forever. This blocks reliable
+   end-to-end verification here. NOT a code bug in the demo, it's runtime/free-tier reliability. Retry,
+   or use a paced/less-loaded inference endpoint.
+3. `exposure` records only 1 event per run (1 sql + 1 record), not one per warning. Design question:
+   decide whether exposure should record per-warning so comms can rank multiple.
+
+Net: the demo's plumbing is verified (provisioning, egress, spawn, namespace correctness), but a
+reliable content-rich brief is not reproducible here due to the watch-query bug (fix pending
+confirmation) + turn-hang flakiness.
+
+## RESOLVED: model = meta/llama-3.3-70b-instruct (non-reasoning); full brief captured (2026-07-02)
+
+The demo default is now **`meta/llama-3.3-70b-instruct`** on build.nvidia.com (set in `.env.example`,
+`.env`, and `setup.sh`; the live gateway was switched with `nemoclaw inference set --provider
+nvidia-prod --model meta/llama-3.3-70b-instruct` — no rebuild). It's served from NVIDIA's endpoint so
+this stays a NemoClaw/NVIDIA demo, but it is NON-REASONING, which the workload requires.
+
+Why we moved off Nemotron (all evidence-backed this session):
+- Nemotron 3 **reasoning** models leak chain-of-thought as the answer on the free build tier.
+  `super-120b` degenerated into token salad on the comms synthesis turn; `nano-omni-...-reasoning`
+  either dumped reasoning-only output or fell into repetition loops.
+- `--thinking off` (OpenClaw CLI flag; accepts off|minimal|low|medium|high) FIXES the tool-calling
+  turns (watch, exposure) on the nano — they run clean. But it does NOT fix the free-form synthesis
+  turn (comms), which degenerates regardless of --thinking off, bounded timeline read (limit:25),
+  a tool-driven/no-enumerate persona, or a bigger maxTokens (8192). Exhausted those levers.
+- NemoClaw's `reasoning:false` / `NEMOCLAW_REASONING=false` does NOT force `thinking:false` at
+  inference time for the managed NVIDIA provider (that only appears in the onboard probe). And the
+  nvapi key is gateway-locked (not in the sandbox), so per-agent NVIDIA model mixing isn't possible
+  from inside the sandbox. Hence: one non-reasoning model for the whole pipeline is the clean answer.
+
+VERIFIED on llama-3.3-70b-instruct: watch -> exposure -> comms all run clean, 0 tool failures, no
+degeneration. comms calls `toolbelt_save` and persists a correctly-formatted 3-section brief. Captured
+example (saved as "Severe-Weather Brief 2026-07-02T14:34Z"):
+  Headline — highest-exposure warning: Flood Warning — NWS Chicago IL: ~3.6M residents.
+  Exposure — Flood Warning — NWS Chicago IL: ~3.6M residents, ~488K buildings, 18.6K policyholders,
+             ~$302B insured.
+  Recommended action — prioritize the highest-exposure warning for public alerting and claims staging.
+NOTE: comms emits the brief into the toolbelt_save CALL, not the visible reply (finalAssistantVisibleText
+is empty) — retrieve the saved document for the text. Also, the "0 active warnings" count in test runs
+is a data-freshness artifact of the heavily-polluted test namespace + bounded read; a clean namespace
+gives an accurate count.
+
+Kept from the nano investigation: `--thinking off` is baked into `run-brief.sh` (harmless no-op for
+the non-reasoning llama; helps if anyone swaps in a reasoning model), and the comms persona now bounds
+its timeline read (`limit`: 25) and forbids row enumeration.
+
+## LATEST: re-verified end-to-end on NemoClaw 0.0.70 + moved to Nemotron default (2026-07-01)
+
+Ran the full flow on **NemoClaw 0.0.70** (host CLI upgraded from 0.0.55), macOS Apple M4 Pro,
+Nemotron via build.nvidia.com. Result: **the single-agent slice works and tool-calling is clean.**
+
+- **Provider flip (done).** `.env.example` now defaults to `NEMOCLAW_PROVIDER=build` +
+  `NEMOCLAW_MODEL=nvidia/nemotron-3-super-120b-a12b` (this is a NemoClaw demo, so it runs on NVIDIA
+  by default). Anthropic Haiku is demoted to a documented fallback block. README / DEPLOY.md /
+  policy.yaml comments reconciled to match. `setup.sh` defaults + exports `NEMOCLAW_PROVIDER=build`
+  so the #976 patch fires on the default path.
+- **Version pin removed.** `setup.sh` no longer requires ">= 0.0.67"; it feature-detects
+  `onboard --agents` and fails fast with an actionable message if the CLI is too old (the local
+  0.0.55 correctly tripped this before the upgrade). A source diff (agent-run) of NemoClaw
+  0.0.67 -> 0.0.71 confirmed every CLI verb/flag `setup.sh` uses is intact; nothing breaks.
+  (Note: npm `nemoclaw@0.1.0` is an unrelated squat package, NOT NVIDIA's CLI. The real CLI is
+  git-tag versioned in the 0.0.7x range; GitHub publishes no Releases.)
+- **`watch` verification turn (PASS).** `nemoclaw toolbelt-shared-brain agent --agent watch --json`:
+  `toolSummary { calls: 8, tools: [toolbelt__toolbelt_sql, toolbelt__toolbelt_record], failures: 0 }`,
+  model `nvidia/nemotron-3-super-120b-a12b`, `stopReason: stop`, `fallbackUsed: false`, 63.4s (no
+  hang), result "Recorded 8 severe warnings with mapped areas." So Nemotron issued STRUCTURED MCP
+  tool calls (not the #976 raw-text-then-exec-bare-toolname failure) and wrote to the shared brain.
+- **Egress hardening (NEW FIX).** `onboard` non-interactively applies its "balanced" policy tier,
+  which WIDENED egress with npm/pypi/huggingface/brew/weather/openclaw-pricing — opening
+  api.weather.gov, open-meteo, github, openrouter, npm/pypi/hf. That silently broke the demo's core
+  "deny-by-default, only the Toolbelt brain is reachable" claim (our `policy-add` only ADDS, it can't
+  replace). `setup.sh` step 5 now removes those presets after the skill install (which itself needs
+  the npm registry). Verified live after removal: `curl api.weather.gov` and `curl example.com` from
+  inside the sandbox both return `CONNECT tunnel failed, response 403` (blocked); `curl
+  mcp.toolbelt.ai` returns 401 (reachable — auth, not a policy block). Only the toolbelt-shared-brain
+  hosts (mcp/app.toolbelt.ai, build/integrate.api.nvidia.com, api.anthropic.com) remain allowlisted.
+- **Patch-necessity is UNSETTLED — do NOT retire the patch scripts on static evidence.** This run
+  both applied `patch-build-tool-calls.sh` AND onboard reported "Chat Completions API available", so
+  it can't isolate whether the #976 patch is still load-bearing on 0.0.70 or whether the native
+  nvidia-prod responses-probe skip now carries it. A source diff suggested both patches may be
+  redundant on 0.0.67+, but that CONTRADICTS this repo's own empirical 0.0.67 log (where the patch was
+  what made tool calls parse). Settle it with ONE run that skips the patch before removing anything.
+  The anchors still match byte-for-byte; keeping the patches is harmless (idempotent no-ops if truly
+  redundant).
+- **Namespace note.** The token has multiple namespaces; setup seeded `a35d02fb-...` (resolved as
+  "Default Workspace"/oldest), not `soccer-match-predictor`. Datasets adopted there.
+
+- **Setup idempotency fix.** The skill install (`npx @toolbeltai/cli`) needs the npm registry. On a
+  re-run against an already-hardened sandbox, onboard reuses it and does NOT re-add the balanced-tier
+  `npm` preset, so the install 403s. `setup.sh` step 5 now explicitly `policy-add npm` before the
+  install (the hardening step removes it again after), so setup is idempotent for fresh AND re-run.
+- **Multi-agent spawn flow (PASS — EEXIST truly fixed).** `nemoclaw ... agent --agent main -m "Give
+  me the current severe-weather situation brief"` ran clean (114s, no fallback, 0 tool failures, NO
+  EEXIST). `main` issued `sessions_spawn` + `sessions_yield`; all three specialists spawned and ran
+  (live session files under `/sandbox/.openclaw/agents/{watch,exposure,comms}/sessions/`) and
+  collaborated through the shared timeline with the intended division of labor: `exposure` read the
+  timeline + ran geo SQL + recorded (3 sql / 3 record / 3 timeline), `comms` read the timeline (3
+  timeline) to draft, `main` read the timeline 18+ times to synthesize. The "secure AND multi-agent
+  via shared brain" story now works end-to-end on 0.0.70.
+  - CAVEAT: a one-shot `agent --agent main` invocation returns `end_turn` with no final brief TEXT —
+    main spawns, yields to the children, and the CLI turn returns before main resumes to emit the
+    synthesized brief. The timeline shows main WAS synthesizing; the final brief surfaces in the TUI
+    or via `run-brief.sh`, not in a scripted one-shot. Harness/UX detail, not a collaboration failure.
+
 ## Verified working (end-to-end, on NemoClaw 0.0.67)
 
 - `scripts/setup.sh` runs clean: token -> create namespace + adopt datasets (REST) ->

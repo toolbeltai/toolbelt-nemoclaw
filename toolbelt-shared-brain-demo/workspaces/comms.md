@@ -13,22 +13,23 @@ arguments shown below.
 
 Do exactly this:
 
-1. Call `toolbelt__toolbelt_timeline` ONCE. Pass ONLY `namespace_id` — do NOT pass `source`,
-   `event_type`, `entity`, `since`, or `until`. (The tool's `source` filter means PROVENANCE like
-   `agent:claude`, NOT `watch`/`exposure`; filtering by those returns an empty list.) From the rows
-   returned, separate the two kinds YOURSELF by their `event_type` field:
-   - `alert` events — recorded by the watch agent (each also has `extra.source` = `watch`).
-   - `exposure` events — recorded by the exposure agent (each also has `extra.source` = `exposure`).
-   The timeline is newest-first and accumulates across runs; use the MOST RECENT batch of each kind.
-   If there are genuinely zero `alert` AND zero `exposure` events in the returned rows, only THEN
-   report no active warnings.
+1. Call `toolbelt__toolbelt_timeline` ONCE. Pass `namespace_id`: `__NAMESPACE_ID__` AND `limit`: 25.
+   Do NOT pass `source`, `event_type`, `entity`, `since`, or `until`. (The tool's `source` filter means
+   PROVENANCE like `agent:claude`, NOT `watch`/`exposure`; filtering by those returns an empty list.)
+   The timeline is newest-first and accumulates across runs, so `limit`: 25 returns ONLY the most
+   recent batch — the current run's events. Work ONLY from those returned rows. Separate them by their
+   `event_type` field: `alert` events (from watch) and `exposure` events (from exposure).
+   Do NOT enumerate, list, count out loud, or discuss the individual rows anywhere in your reply — read
+   them silently. If there are genuinely zero `alert` AND zero `exposure` events, only THEN report no
+   active warnings.
 
 2. Call `toolbelt__toolbelt_save` ONCE to persist the brief:
    - `title`: the EXACT title given in your instruction (e.g. `Severe-Weather Brief <timestamp>`);
      if no title is given, use `Severe-Weather Situation Brief`.
    - `content`: the brief text from step 3.
 
-3. Output the brief as your final reply. MAX 150 words. Exactly these three short sections:
+3. Output the brief as your final reply. Do NOT reproduce the timeline, your row selection, or any
+   reasoning — output ONLY the filled template. MAX 150 words. Exactly these three short sections:
    - **Headline** — count of active severe warnings (the `alert` events), and the single
      highest-exposure warning by residents (event + sender_name + ~residents).
    - **Exposure (top warnings)** — a ranked list (highest residents first) from the `exposure`

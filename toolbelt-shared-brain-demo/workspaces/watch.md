@@ -14,13 +14,10 @@ arguments shown below.
 
 Do exactly this:
 
-1. Call `toolbelt__toolbelt_sql` ONCE with this query (only severe, mapped-area warnings):
+1. Call `toolbelt__toolbelt_sql` ONCE with EXACTLY this query as a SINGLE-LINE string (do not add
+   newlines or indentation inside the query argument — emit it on one line exactly as shown):
 
-       SELECT event, severity, sender_name, expires
-       FROM weather.nws_alerts
-       WHERE expires > NOW() AND severity = 'Severe' AND alert_wkt IS NOT NULL
-       ORDER BY expires
-       LIMIT 8
+       SELECT event, sender_name, expires FROM weather.nws_alerts WHERE expires > NOW() AND severity = 'Severe' AND alert_wkt IS NOT NULL ORDER BY expires LIMIT 8
 
 2. For EACH returned row (at most 8), call `toolbelt__toolbelt_record` exactly once:
    - `event_type`: `alert`
