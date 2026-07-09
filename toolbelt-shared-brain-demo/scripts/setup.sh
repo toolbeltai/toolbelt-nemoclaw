@@ -174,16 +174,32 @@ nemoclaw "$SANDBOX" exec --no-tty -- env \
   TOOLBELT_TOKEN="$TOOLBELT_TOKEN" TOOLBELT_HOST="$HOST" \
   npx -y @toolbeltai/cli@latest install --client openclaw
 
-# Disable the tool-search surface. We do NOT pin the MCP url to a /ns/<id>/ path: the
-# Toolbelt MCP ignores that path and resolves the namespace from the token's default
-# (which step 2 seeded), so the installer's bare /mcp url already points the agents at the
-# shared brain. The CLI has no host-side `config set`, and in-sandbox `openclaw config set`
-# is guarded ("cannot modify config inside the sandbox"); but openclaw.json IS writable via
-# exec and the edit survives `recover` (not a rebuild, which is fine for a demo).
-#   - tools.toolSearch=false -> expose toolbelt__*/sessions_spawn directly; the compact
-#     tool-search surface routes every tool through one call Nemotron can't drive.
+# Two in-sandbox openclaw.json edits. The CLI has no host-side `config set`, and in-sandbox
+# `openclaw config set` is guarded ("cannot modify config inside the sandbox"); but openclaw.json
+# IS writable via exec and the edit survives `recover` (not a rebuild, which is fine for a demo).
+#
+# 1. tools.toolSearch=false -> expose toolbelt__*/sessions_spawn directly; the compact tool-search
+#    surface routes every tool through one call some models can't drive reliably.
 log "  disabling tool-search surface"
 nemoclaw "$SANDBOX" exec --no-tty -- python3 -c 'import json,pathlib; p=pathlib.Path("/sandbox/.openclaw/openclaw.json"); c=json.loads(p.read_text()); c.setdefault("tools",{})["toolSearch"]=False; p.write_text(json.dumps(c,indent=2)); print("  tools.toolSearch=false")'
+
+# 2. Pin the MCP server URL to /ns/$NS/mcp. `toolbelt install` writes a BARE /mcp url, and the
+#    Toolbelt MCP resolves the target namespace with precedence: URL path /ns/<id>/mcp  >  per-call
+#    namespace_id arg (no token-default fallback). With a bare url, every write depends on the model
+#    passing the right namespace_id UUID on each call — fragile, and it silently drifts to whatever
+#    id the model emits. Pinning the url path makes toolbelt_record/save/timeline route to $NS
+#    deterministically (URL scope wins), independent of the model. (toolbelt_sql still reads from its
+#    namespace_id arg, which the personas pin to $NS; its data is the same by-reference public assets
+#    regardless.) We swap only the path, preserving the installer's scheme+host (dev/prod agnostic).
+log "  pinning MCP server url to namespace $NS"
+nemoclaw "$SANDBOX" exec --no-tty -- python3 -c "import json,pathlib,urllib.parse as U
+p=pathlib.Path('/sandbox/.openclaw/openclaw.json'); c=json.loads(p.read_text())
+srv=(c.get('mcp',{}).get('servers',{}) or {}).get('toolbelt')
+if srv and srv.get('url'):
+    u=U.urlsplit(srv['url']); srv['url']=U.urlunsplit((u.scheme,u.netloc,'/ns/$NS/mcp','',''))
+    p.write_text(json.dumps(c,indent=2)); print('  mcp url ->',srv['url'])
+else:
+    print('  WARN: toolbelt MCP server entry not found; url not pinned')"
 
 # Harden egress: `onboard` non-interactively applies its "balanced" policy tier, which WIDENS the
 # sandbox egress with these presets (npm, pypi, huggingface, brew, weather, openclaw-pricing) —
