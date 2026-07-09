@@ -191,15 +191,10 @@ nemoclaw "$SANDBOX" exec --no-tty -- python3 -c 'import json,pathlib; p=pathlib.
 #    deterministically (URL scope wins), independent of the model. (toolbelt_sql still reads from its
 #    namespace_id arg, which the personas pin to $NS; its data is the same by-reference public assets
 #    regardless.) We swap only the path, preserving the installer's scheme+host (dev/prod agnostic).
+# NOTE: `nemoclaw exec` rejects command arguments containing newlines, so this MUST be a
+# single-line python invocation (like the toolSearch edit above).
 log "  pinning MCP server url to namespace $NS"
-nemoclaw "$SANDBOX" exec --no-tty -- python3 -c "import json,pathlib,urllib.parse as U
-p=pathlib.Path('/sandbox/.openclaw/openclaw.json'); c=json.loads(p.read_text())
-srv=(c.get('mcp',{}).get('servers',{}) or {}).get('toolbelt')
-if srv and srv.get('url'):
-    u=U.urlsplit(srv['url']); srv['url']=U.urlunsplit((u.scheme,u.netloc,'/ns/$NS/mcp','',''))
-    p.write_text(json.dumps(c,indent=2)); print('  mcp url ->',srv['url'])
-else:
-    print('  WARN: toolbelt MCP server entry not found; url not pinned')"
+nemoclaw "$SANDBOX" exec --no-tty -- python3 -c "import json,pathlib,urllib.parse as U; p=pathlib.Path('/sandbox/.openclaw/openclaw.json'); c=json.loads(p.read_text()); s=c['mcp']['servers']['toolbelt']; u=U.urlsplit(s['url']); s['url']=U.urlunsplit((u.scheme,u.netloc,'/ns/$NS/mcp','','')); p.write_text(json.dumps(c,indent=2)); print('  mcp url ->', s['url'])"
 
 # Harden egress: `onboard` non-interactively applies its "balanced" policy tier, which WIDENS the
 # sandbox egress with these presets (npm, pypi, huggingface, brew, weather, openclaw-pricing) —
