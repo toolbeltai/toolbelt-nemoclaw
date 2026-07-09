@@ -56,26 +56,66 @@ print(v if v is not None else "")' "$1"; }
 : "${ASSET_CENSUS:=48712868-6148-4b35-a040-753429865205}"  # US Census Blocks 2024
 : "${ASSET_BUILDINGS:=11110bc2-4082-4117-aefc-bde076bab370}" # US Building Footprints
 
-# --- 1. Toolbelt token + its default namespace (the brain's identity) ---
-log "1/6 resolving Toolbelt token + default namespace"
-NS=""
+# --- 1. Toolbelt token (the brain's identity) ---
+log "1/6 resolving Toolbelt token"
+ONBOARD_NS=""
 if [ -z "${TOOLBELT_TOKEN:-}" ]; then
   ob="$(curl -fsS -X POST "$HOST/api/onboard" -H 'content-type: application/json' -d '{}')"
   TOOLBELT_TOKEN="$(printf '%s' "$ob" | jget token)"
-  NS="$(printf '%s' "$ob" | jget namespace.id)"   # onboard returns the token's default namespace
+  ONBOARD_NS="$(printf '%s' "$ob" | jget namespace.id)"   # onboard also creates a default namespace
   [ -n "$TOOLBELT_TOKEN" ] || die "anonymous onboard failed"
-  log "  provisioned anonymous token (default namespace from onboard)"
+  log "  provisioned anonymous token"
 fi
 AUTH=(-H "authorization: Bearer $TOOLBELT_TOKEN" -H 'accept: application/json' -H 'content-type: application/json')
 
-# --- 2. resolve the token's DEFAULT namespace, then adopt datasets into IT ---
-# The Toolbelt MCP resolves the namespace from the TOKEN (its default); a /ns/<id>/ URL
-# path is NOT honored, so the agents always read/write the token's default namespace.
-# We therefore seed THAT namespace (no new namespace, no URL pin) so the shared brain the
-# agents use is exactly the one we populate. Default = the auto-created "Default Workspace",
-# falling back to the oldest namespace.
-log "2/6 resolving default namespace + adopting datasets (the shared brain)"
-if [ -z "$NS" ]; then
+# --- 2. select the namespace (the shared brain), then adopt datasets into it ---
+# The agents pass an explicit namespace_id on every tool call (setup pins it into the personas),
+# so whichever namespace resolves HERE is exactly the shared brain they read and write.
+# TOOLBELT_NAMESPACE (optional) picks which one:
+#   - a namespace id (UUID) -> used directly
+#   - a namespace name      -> resolved to its id, created if it doesn't exist yet
+#   - unset                 -> the token's default (the just-onboarded namespace for an anonymous
+#                              token, else "Default Workspace", else the oldest namespace)
+# The token must own (or have shared access to) the chosen namespace.
+log "2/6 selecting namespace + adopting datasets (the shared brain)"
+
+is_uuid() { printf '%s' "$1" | grep -qiE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; }
+
+# Resolve a namespace NAME to its id from the caller's namespace list (empty if not found).
+ns_id_by_name() {
+  local list
+  list="$(curl -fsS "$HOST/api/namespace" "${AUTH[@]}" 2>/dev/null || true)"
+  printf '%s' "$list" | NS_WANT="$1" python3 -c 'import sys,json,os
+want=os.environ["NS_WANT"]
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+a=d if isinstance(d,list) else (d.get("namespaces") or d.get("data") or [])
+m=[n for n in a if (n.get("name") or "")==want]
+print((m[0].get("id") or "") if m else "")'
+}
+
+NS=""
+if [ -n "${TOOLBELT_NAMESPACE:-}" ]; then
+  if is_uuid "$TOOLBELT_NAMESPACE"; then
+    NS="$TOOLBELT_NAMESPACE"
+    log "  using namespace id: $NS"
+  else
+    NS="$(ns_id_by_name "$TOOLBELT_NAMESPACE")"
+    if [ -n "$NS" ]; then
+      log "  matched existing namespace '$TOOLBELT_NAMESPACE' -> $NS"
+    else
+      log "  creating namespace '$TOOLBELT_NAMESPACE'"
+      cr="$(curl -fsS -X POST "$HOST/api/namespace" "${AUTH[@]}" -d "{\"name\":\"$TOOLBELT_NAMESPACE\"}" 2>/dev/null || true)"
+      NS="$(printf '%s' "$cr" | jget namespace.id)"; [ -n "$NS" ] || NS="$(printf '%s' "$cr" | jget id)"
+      [ -n "$NS" ] || die "could not create namespace '$TOOLBELT_NAMESPACE': $(printf '%s' "$cr" | head -c 200)"
+      log "  created namespace '$TOOLBELT_NAMESPACE' -> $NS"
+    fi
+  fi
+elif [ -n "$ONBOARD_NS" ]; then
+  NS="$ONBOARD_NS"
+  log "  using the token's onboard namespace: $NS"
+else
+  # Pre-existing token, no override: pick the token's default ("Default Workspace", else oldest).
   for try in 1 2 3; do
     list="$(curl -fsS "$HOST/api/namespace" "${AUTH[@]}" 2>/dev/null || true)"
     NS="$(printf '%s' "$list" | python3 -c 'import sys,json
@@ -89,9 +129,9 @@ print(pick.get("id") or "")' || true)"
     [ -n "$NS" ] && break
     sleep 3
   done
+  log "  default namespace = $NS"
 fi
-[ -n "$NS" ] || die "could not resolve the default namespace (network? check $HOST)"
-log "  default namespace = $NS"
+[ -n "$NS" ] || die "could not resolve a namespace (network? check $HOST, or set TOOLBELT_NAMESPACE)"
 
 for pair in "NWS Active Weather Alerts=$ASSET_NWS" "US Census Blocks 2024=$ASSET_CENSUS" "US Building Footprints=$ASSET_BUILDINGS"; do
   name="${pair%%=*}"; aid="${pair##*=}"
