@@ -32,6 +32,13 @@ mkdir -p /var/tmp/$USER/openshell && cp ~/.local/bin/openshell-sandbox /var/tmp/
 echo "NEMOCLAW_OPENSHELL_SANDBOX_BIN=/var/tmp/$USER/openshell/openshell-sandbox" >> catdesk-agents/.env
 ```
 
+If the box shares its home directory with machines of another architecture, the Bun in `~/.bun` may not run ("cannot execute binary file: Exec format error"). Install one for this machine outside your home and point the script at it:
+
+```bash
+curl -fsSL https://bun.sh/install | BUN_INSTALL=/var/tmp/$USER/bun bash
+echo "BUN=/var/tmp/$USER/bun/bin/bun" >> catdesk-agents/.env
+```
+
 Rerun `./catdesk-demo.sh` after a failed setup rather than `nemoclaw onboard --resume` by hand: the script loads `.env`, so the port and binary overrides apply, and it onboards with `--no-gpu` as the demo expects.
 
 The first run builds the `toolbelt-catdesk` sandbox with `scripts/setup.sh` (onboard, egress policy, Toolbelt install, personas), which takes about 10 minutes. Every run after that goes straight to the take.

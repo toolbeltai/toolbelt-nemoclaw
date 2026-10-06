@@ -182,7 +182,7 @@ async function ensureTrigger() {
   if (await up()) return "already running";
   if (new URL(TRIGGER_URL).hostname !== "localhost") throw new Error(`the trigger at ${TRIGGER_URL} is not answering`);
   if (!process.env.TOOLBELT_TOKEN) throw new Error(`TOOLBELT_TOKEN is not set (put it in ${envFile})`);
-  ownTrigger = Bun.spawn(["bun", "run", join(TRIGGER_DIR, "server.ts")], {
+  ownTrigger = Bun.spawn([process.execPath, "run", join(TRIGGER_DIR, "server.ts")], {
     env: { ...process.env, NAMESPACE_ID, PORT: new URL(TRIGGER_URL).port || "8787" },
     stdout: "ignore",
     stderr: "inherit",

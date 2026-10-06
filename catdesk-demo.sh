@@ -21,7 +21,7 @@ AGENTS="$REPO/catdesk-agents"
 log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
-for cmd in bun docker nemoclaw python3 curl; do
+for cmd in docker nemoclaw python3 curl; do
   command -v "$cmd" >/dev/null || die "$cmd is not installed (see catdesk-agents/README.md, 'A new box')"
 done
 docker ps -q >/dev/null 2>&1 || die "Docker is not running"
@@ -41,8 +41,13 @@ if ! nemoclaw list --json 2>/dev/null | python3 -c 'import sys,json; d=json.load
   "$AGENTS/scripts/setup.sh"
 fi
 
+# BUN in .env picks a specific Bun, e.g. an arm64 build when a shared home holds an x86 one.
+BUN="${BUN:-$(command -v bun || true)}"
+[ -n "$BUN" ] || die "bun is not installed (see catdesk-agents/README.md, 'A new box')"
+"$BUN" --version >/dev/null 2>&1 || die "$BUN does not run on this machine ($(uname -m)); install a Bun for it and set BUN in catdesk-agents/.env"
+
 # Default to approving through the API so the take runs unattended.
 args=("$@")
 case " $* " in *" --approve "*) ;; *) args+=(--approve auto) ;; esac
 
-exec bun run "$REPO/catdesk-director/director.ts" "${args[@]}"
+exec "$BUN" run "$REPO/catdesk-director/director.ts" "${args[@]}"
