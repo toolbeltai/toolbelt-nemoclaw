@@ -221,43 +221,138 @@ async function summary(runId: string) {
   return rows[0] ?? null;
 }
 
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cat Desk Trigger</title>
+const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cat Desk Control</title>
 <style>
-:root{--bg:#fff;--fg:#1d2128;--muted:#5f6b7a;--line:#e3e6ea;--accent:#2563eb}
-@media (prefers-color-scheme:dark){:root{--bg:#14171c;--fg:#e8eaee;--muted:#9aa3ae;--line:#2a2f37;--accent:#6b9cff}}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,sans-serif}
-main{max-width:760px;margin:0 auto;padding:32px 16px}
-h1{font-size:20px;margin:0 0 4px} p{color:var(--muted);margin:0 0 20px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:24px}
-input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}
-button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.tile{border:1px solid var(--line);border-radius:10px;padding:14px}
-.tile b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
-.tile span{color:var(--muted);font-size:13px}
-#status{color:var(--muted);font-size:13px;margin-top:16px;white-space:pre-wrap}
+:root{--bg:#0B1221;--panel:#121C31;--panel2:#0f1829;--line:#27334C;--fg:#E7EBF3;--muted:#8A95AB;--accent:#35D7C0;--accent-dim:#1f6f66;--danger:#ff6b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+main{max-width:880px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:22px}
+h1{font-size:22px;margin:0;letter-spacing:.2px}
+.sub{color:var(--muted);font-size:13px;margin:4px 0 0}
+.statuswrap{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--muted);font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.dot.on{background:var(--accent);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(53,215,192,.5)}70%{box-shadow:0 0 0 7px rgba(53,215,192,0)}100%{box-shadow:0 0 0 0 rgba(53,215,192,0)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px}
+.ctl-row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.ctl-row.sub{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+.lbl{color:var(--muted);font-size:13px;margin-right:4px}
+label{color:var(--muted);font-size:13px;display:inline-flex;align-items:center;gap:7px}
+input{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--fg);min-width:92px}
+input#viewurl{min-width:240px;flex:1}
+.btn{font:inherit;font-size:14px;padding:9px 15px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;transition:.12s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#06221e;font-weight:600}
+.btn.primary:hover{filter:brightness(1.08);color:#06221e}
+.btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.btn.ghost{padding:8px 13px}
+.progline{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--muted);margin:2px 0 7px}
+.progline.sub2{margin-top:14px}
+.mono{font-variant-numeric:tabular-nums;color:var(--fg)}
+.bar{height:12px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.bar.thin{height:8px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent-dim),var(--accent));transition:width .5s ease}
+.bar.thin i{background:var(--accent-dim)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+.tile span{color:var(--muted);font-size:12.5px;display:block;margin-bottom:5px}
+.tile b{font-size:27px;font-variant-numeric:tabular-nums;font-weight:650}
+.tile.accent{border-color:var(--accent);background:linear-gradient(180deg,rgba(53,215,192,.08),rgba(53,215,192,0))}
+.tile.accent b{color:var(--accent)}
+.wf-title{font-size:13px;color:var(--muted);margin-bottom:12px}
+.wf{display:grid;grid-template-columns:118px 1fr 86px;align-items:center;gap:12px;margin:9px 0}
+.wf-lbl{font-size:13px;color:var(--muted)}
+.wf-track{height:16px;background:var(--panel2);border-radius:6px;overflow:hidden}
+.wf-track i{display:block;height:100%;width:0;border-radius:6px;transition:width .6s ease}
+.wf-v{font-size:13px;text-align:right}
+#status{color:var(--muted);font-size:12.5px;margin:14px 2px 0;white-space:pre-wrap;min-height:18px}
+.foot{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.link{color:var(--accent);text-decoration:none;font-size:13px}
+.link:hover{text-decoration:underline}
 </style></head><body><main>
-<h1>Cat Desk Trigger</h1>
-<p>Replays the Jul 21 to 23 Gulf storm into the shared brain. Numbers below are read back from the namespace's roll-up views.</p>
-<div class="row"><input id="run" value="take-1" aria-label="Run id">
-<button class="primary" onclick="act('play')">Play</button><button onclick="act('stop')">Stop</button><button onclick="act('reset')">Reset run</button></div>
-<div class="grid">
-<div class="tile"><b id="slices">0</b><span>findings written</span></div>
-<div class="tile"><b id="gu">$0</b><span>ground-up loss</span></div>
-<div class="tile"><b id="ins">$0</b><span>insured loss</span></div>
-<div class="tile"><b id="rec">$0</b><span>reinsurance recovered</span></div>
-<div class="tile"><b id="net">$0</b><span>net retained</span></div>
-</div><div id="status"></div></main>
+<header>
+<div><h1>Catastrophe Response Desk</h1><p class="sub">Gulf storm replay into the shared brain &middot; figures read back live from the namespace roll-ups</p></div>
+<div class="statuswrap"><span id="dot" class="dot"></span><span id="phase">Idle</span></div>
+</header>
+
+<section class="panel">
+<div class="ctl-row">
+<label>Run <input id="run" value="take-1" aria-label="Run id"></label>
+<button class="btn primary" onclick="act('play')">&#9654; Play full</button>
+<button class="btn" onclick="act('stop')">&#9632; Stop</button>
+<button class="btn danger" onclick="act('reset')">&#8635; Reset</button>
+<button class="btn" onclick="restart()">&#8634; Stop and resume</button>
+</div>
+<div class="ctl-row sub">
+<span class="lbl">Fill part way, then stop</span>
+<button class="btn ghost" onclick="playTo(0.25)">25%</button>
+<button class="btn ghost" onclick="playTo(0.5)">50%</button>
+<button class="btn ghost" onclick="playTo(0.75)">75%</button>
+<button class="btn ghost" onclick="playTo(1)">100%</button>
+</div>
+</section>
+
+<section class="panel">
+<div class="progline"><span>Findings in the shared brain</span><span id="cnt" class="mono">0 / 133</span></div>
+<div class="bar"><i id="barfill"></i></div>
+<div class="progline sub2"><span>Coverage applied &middot; insured loss filled in</span><span id="cvg" class="mono">0 / 133</span></div>
+<div class="bar thin"><i id="cvgfill"></i></div>
+</section>
+
+<section class="grid">
+<div class="tile"><span>Ground-up loss</span><b id="gu">$0</b></div>
+<div class="tile"><span>Insured loss</span><b id="ins">$0</b></div>
+<div class="tile"><span>Reinsurance recovered</span><b id="rec">$0</b></div>
+<div class="tile accent"><span>Net retained</span><b id="net">$0</b></div>
+</section>
+
+<section class="panel">
+<div class="wf-title">Gross to net</div>
+<div class="wf"><span class="wf-lbl">Ground-up</span><div class="wf-track"><i id="wf-gu" style="background:#3A4D6B"></i></div><span id="wfv-gu" class="wf-v mono"></span></div>
+<div class="wf"><span class="wf-lbl">Insured</span><div class="wf-track"><i id="wf-ins" style="background:#4b7fb0"></i></div><span id="wfv-ins" class="wf-v mono"></span></div>
+<div class="wf"><span class="wf-lbl">Recovered</span><div class="wf-track"><i id="wf-rec" style="background:var(--accent-dim)"></i></div><span id="wfv-rec" class="wf-v mono"></span></div>
+<div class="wf"><span class="wf-lbl">Net retained</span><div class="wf-track"><i id="wf-net" style="background:var(--accent)"></i></div><span id="wfv-net" class="wf-v mono"></span></div>
+</section>
+
+<section class="panel foot">
+<label>View URL <input id="viewurl" placeholder="paste the published View link"></label>
+<button class="btn" onclick="openView()">Open View &#8599;</button>
+<a id="atlaslink" class="link" target="_blank" rel="noopener">Open namespace in Atlas &#8599;</a>
+</section>
+
+<div id="status"></div>
+</main>
 <script>
-const $=id=>document.getElementById(id);
-const usd=v=>{v=Number(v||0);return v>=1e9?'$'+(v/1e9).toFixed(2)+'B':'$'+Math.round(v/1e6)+'M'};
-async function act(a){const r=await fetch('/'+a+'?run='+encodeURIComponent($('run').value),{method:'POST'});$('status').textContent=await r.text();refresh()}
-async function refresh(){try{const r=await fetch('/status?run='+encodeURIComponent($('run').value));const s=await r.json();const m=s.summary||{};
-$('slices').textContent=(m.slices||0)+' / '+(s.state.total||133);$('gu').textContent=usd(m.ground_up);$('ins').textContent=usd(m.insured);
-$('rec').textContent=usd(m.recovered);$('net').textContent=usd(m.net_retained);
-$('status').textContent=(s.state.running?'Running':'Idle')+' · exposure '+s.state.exposureDone+' · coverage '+s.state.coverageDone+(s.state.error?'\\n'+s.state.error:'')}catch(e){$('status').textContent=String(e)}}
+var $=function(id){return document.getElementById(id)};
+function usd(v){v=Number(v||0);if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+Math.round(v/1e6)+'M';if(v>=1e3)return '$'+Math.round(v/1e3)+'K';return '$'+Math.round(v)}
+function getrun(){return ($('run').value||'take-1').trim()}
+var target=null,lastTotal=133;
+try{var a=localStorage.getItem('catdesk_run');if(a)$('run').value=a;var b=localStorage.getItem('catdesk_viewurl');if(b)$('viewurl').value=b}catch(e){}
+$('atlaslink').href='https://app.toolbelt.ai/namespaces/664f9ed5-a82e-4908-92bb-d5d209f5fb1c';
+function save(){try{localStorage.setItem('catdesk_run',getrun());localStorage.setItem('catdesk_viewurl',$('viewurl').value)}catch(e){}}
+async function post(x){var r=await fetch('/'+x+'?run='+encodeURIComponent(getrun()),{method:'POST'});return await r.text()}
+async function act(x){target=null;$('status').textContent=await post(x);refresh()}
+async function playTo(frac){var t=lastTotal||133;target=Math.max(1,Math.round(frac*t));$('status').textContent='Filling to '+Math.round(frac*100)+'%  ('+target+' of '+t+' slices), then stopping.\\n'+await post('play');refresh()}
+async function restart(){$('status').textContent='Stopping the fleet\\u2026\\n'+await post('stop');var i=0;var h=setInterval(async function(){try{var s=await (await fetch('/status?run='+encodeURIComponent(getrun()))).json();if(!s.state.running|| ++i>25){clearInterval(h);$('status').textContent='Resuming from the shared brain\\u2026\\n'+await post('play');refresh()}}catch(e){clearInterval(h)}},800)}
+function openView(){save();var u=$('viewurl').value.trim();if(u){window.open(u,'_blank')}else{$('status').textContent='Paste the published View URL first, then press Open View.'}}
+async function refresh(){try{
+var s=await (await fetch('/status?run='+encodeURIComponent(getrun()))).json();var m=s.summary||{};var st=s.state||{};
+var tot=st.total||133;lastTotal=tot;var ex=st.exposureDone||0,cv=st.coverageDone||0;
+$('cnt').textContent=ex+' / '+tot;$('cvg').textContent=cv+' / '+tot;
+$('barfill').style.width=(tot?100*ex/tot:0)+'%';$('cvgfill').style.width=(tot?100*cv/tot:0)+'%';
+$('gu').textContent=usd(m.ground_up);$('ins').textContent=usd(m.insured);$('rec').textContent=usd(m.recovered);$('net').textContent=usd(m.net_retained);
+var gu=Number(m.ground_up||0);function w(v){return (gu>0?100*Number(v||0)/gu:0)+'%'}
+$('wf-gu').style.width='100%';$('wf-ins').style.width=w(m.insured);$('wf-rec').style.width=w(m.recovered);$('wf-net').style.width=w(m.net_retained);
+$('wfv-gu').textContent=usd(m.ground_up);$('wfv-ins').textContent=usd(m.insured);$('wfv-rec').textContent=usd(m.recovered);$('wfv-net').textContent=usd(m.net_retained);
+$('dot').className='dot'+(st.running?' on':'');
+$('phase').textContent=st.running?('Running \\u00b7 '+ex+'/'+tot):(ex>0?('Idle \\u00b7 '+ex+' in brain'):'Idle');
+if(st.running&&target!==null&&ex>=target){var g=target;target=null;$('status').textContent='Reached '+g+' slices \\u2014 stopping.\\n'+await post('stop')}
+else if(st.error){$('status').textContent=st.error}
+}catch(e){$('status').textContent=String(e)}}
+$('run').addEventListener('change',function(){save();target=null;refresh()});
+$('viewurl').addEventListener('change',save);
 refresh();setInterval(refresh,2000);
 </script></body></html>`;
 
