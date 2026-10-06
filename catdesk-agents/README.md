@@ -25,6 +25,15 @@ cp catdesk-agents/.env.example catdesk-agents/.env   # set NEMOCLAW_PROVIDER_KEY
 
 If a port is taken on the box (onboarding stops with "Port 8080 is not available"), set `NEMOCLAW_GATEWAY_PORT` in `.env` to a free port, and likewise `NEMOCLAW_DASHBOARD_PORT` (default 18789) or `TRIGGER_URL` (default `http://localhost:8787`). Keep them in `.env`: every `nemoclaw` command reads the gateway port, not just onboarding.
 
+If your home directory is on NFS, Docker cannot bind-mount from it, and sandbox creation fails with "error while creating mount source path '.../.local/bin/openshell-sandbox': ... permission denied". Copy that binary to local disk and point NemoClaw at it in `.env`:
+
+```bash
+mkdir -p /var/tmp/$USER/openshell && cp ~/.local/bin/openshell-sandbox /var/tmp/$USER/openshell/
+echo "NEMOCLAW_OPENSHELL_SANDBOX_BIN=/var/tmp/$USER/openshell/openshell-sandbox" >> catdesk-agents/.env
+```
+
+Rerun `./catdesk-demo.sh` after a failed setup rather than `nemoclaw onboard --resume` by hand: the script loads `.env`, so the port and binary overrides apply, and it onboards with `--no-gpu` as the demo expects.
+
 The first run builds the `toolbelt-catdesk` sandbox with `scripts/setup.sh` (onboard, egress policy, Toolbelt install, personas), which takes about 10 minutes. Every run after that goes straight to the take.
 
 ## A take
