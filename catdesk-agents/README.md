@@ -43,6 +43,14 @@ Rerun `./catdesk-demo.sh` after a failed setup rather than `nemoclaw onboard --r
 
 The first run builds the `toolbelt-catdesk` sandbox with `scripts/setup.sh` (onboard, egress policy, Toolbelt install, personas), which takes about 10 minutes. Every run after that goes straight to the take.
 
+### A second user on the same box
+
+Each user gets their own NemoClaw install, gateway and sandbox, but they share one Docker daemon and one namespace. On top of the steps above:
+
+- Use ports that differ from the other user's in `.env`: `NEMOCLAW_GATEWAY_PORT`, `NEMOCLAW_DASHBOARD_PORT`, and `TRIGGER_URL` (each user's take starts the trigger on that port).
+- Give the sandbox its own name: `NEMOCLAW_SANDBOX_NAME=toolbelt-catdesk-<you>`.
+- Only one take at a time: both write to the same namespace, and each take's reset clears the findings and lessons the other is using.
+
 ## A take
 
 `../catdesk-demo.sh` does what Reset and Play do on the trigger page, then runs every agent beat in order (see `../catdesk-director/README.md`). It starts the trigger service for the take if it isn't already running. Open the View to watch it fill in.
