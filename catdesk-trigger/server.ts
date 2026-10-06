@@ -137,17 +137,22 @@ const describe = (batch: Slice[]) => {
   return { carriers, states, counties: batch.length };
 };
 
-async function play(runId: string) {
+async function play(runId: string, role?: "exposure" | "coverage") {
+  // role lets the demo run one agent at a time: "exposure" (what got hit) or
+  // "coverage" (what we pay). Undefined runs both, interleaved, as before.
+  const doExp = role !== "coverage";
+  const doCov = role !== "exposure";
   const slices = await loadSlices();
   const done = await existing(runId);
   // Resume: exposure for slices not yet written, coverage for slices without insured.
-  const exposureQueue = slices.filter((s) => !done.has(key(s)));
-  const coverageQueue = slices.filter((s) => done.get(key(s)) !== true);
+  const exposureQueue = doExp ? slices.filter((s) => !done.has(key(s))) : [];
+  const coverageQueue = doCov ? slices.filter((s) => done.get(key(s)) !== true) : [];
+  let covWritten = 0; done.forEach((v) => { if (v) covWritten++; });
 
   state = {
     runId, running: true, total: slices.length,
-    exposureDone: slices.length - exposureQueue.length,
-    coverageDone: slices.length - coverageQueue.length,
+    exposureDone: done.size,
+    coverageDone: covWritten,
     startedAt: new Date().toISOString(), lastBatchAt: null, error: null,
   };
   stopRequested = false;
@@ -204,10 +209,12 @@ async function play(runId: string) {
     state.running = false;
     console.log(stopRequested ? "[play] stopped" : "[play] finished");
     if (!stopRequested && !state.error) {
-      await record(
-        `All ${state.total} slices are in the shared brain with insured loss filled in; ready for the morning synthesis`,
-        "fleet", STORM_ID, { runId },
-      );
+      const msg = role === "exposure"
+        ? `Exposure pass complete: ${state.exposureDone} slices mapped to the storm`
+        : role === "coverage"
+        ? `Coverage pass complete: policy terms applied across ${state.coverageDone} slices`
+        : `All ${state.total} slices are in the shared brain with insured loss filled in; ready for the morning synthesis`;
+      await record(msg, "fleet", STORM_ID, { runId });
     }
   }
 }
@@ -287,6 +294,11 @@ input#viewurl{min-width:240px;flex:1}
 <button class="btn" onclick="restart()">&#8634; Stop and resume</button>
 </div>
 <div class="ctl-row sub">
+<span class="lbl">One agent at a time</span>
+<button class="btn ghost" onclick="playRole('exposure')">1 &middot; What got hit</button>
+<button class="btn ghost" onclick="playRole('coverage')">2 &middot; What we pay</button>
+</div>
+<div class="ctl-row sub">
 <span class="lbl">Speed</span>
 <button class="btn ghost spd" data-s="fast" onclick="setSpeed('fast')">Fast &middot; ~12s</button>
 <button class="btn ghost spd" data-s="demo" onclick="setSpeed('demo')">Demo &middot; ~22s</button>
@@ -345,6 +357,7 @@ $('atlaslink').href='https://app.toolbelt.ai/namespaces/664f9ed5-a82e-4908-92bb-
 function save(){try{localStorage.setItem('catdesk_run',getrun());localStorage.setItem('catdesk_viewurl',$('viewurl').value)}catch(e){}}
 async function post(x,extra){var r=await fetch('/'+x+'?run='+encodeURIComponent(getrun())+(extra||''),{method:'POST'});return await r.text()}
 async function act(x,extra){target=null;$('status').textContent=await post(x,extra);refresh()}
+async function playRole(r){target=null;$('status').textContent=await post('play','&role='+r+sp());refresh()}
 async function playTo(frac){var t=lastTotal||133;target=Math.max(1,Math.round(frac*t));$('status').textContent='Filling to '+Math.round(frac*100)+'%  ('+target+' of '+t+' slices), then stopping.\\n'+await post('play',sp());refresh()}
 async function restart(){$('status').textContent='Stopping the fleet\\u2026\\n'+await post('stop');var i=0;var h=setInterval(async function(){try{var s=await (await fetch('/status?run='+encodeURIComponent(getrun()))).json();if(!s.state.running|| ++i>25){clearInterval(h);$('status').textContent='Resuming from the shared brain\\u2026\\n'+await post('play',sp());refresh()}}catch(e){clearInterval(h)}},800)}
 function openView(){save();var u=$('viewurl').value.trim();if(u){window.open(u,'_blank')}else{$('status').textContent='Paste the published View URL first, then press Open View.'}}
@@ -387,8 +400,10 @@ Bun.serve({
         if (Number.isFinite(b) && b >= 1 && b <= 20) BATCH_SIZE = Math.floor(b);
         const iv = Number(url.searchParams.get("interval"));
         if (Number.isFinite(iv) && iv >= 200 && iv <= 6000) INTERVAL_MS = Math.floor(iv);
-        play(runId);
-        return new Response(`Playing ${runId} (batch ${BATCH_SIZE}, every ${INTERVAL_MS}ms)`);
+        const roleArg = url.searchParams.get("role");
+        const r = roleArg === "exposure" || roleArg === "coverage" ? roleArg : undefined;
+        play(runId, r);
+        return new Response(`Playing ${runId}${r ? " (" + r + " only)" : ""} (batch ${BATCH_SIZE}, every ${INTERVAL_MS}ms)`);
       }
       if (req.method === "POST" && url.pathname === "/stop") {
         stopRequested = true;
