@@ -16,8 +16,8 @@ const TOKEN = process.env.TOOLBELT_TOKEN ?? "";
 const NAMESPACE_ID = process.env.NAMESPACE_ID ?? "664f9ed5-a82e-4908-92bb-d5d209f5fb1c";
 const STORM_ID = process.env.STORM_ID ?? "Gulf Coast Storm July";
 const PORT = Number(process.env.PORT ?? 8787);
-const BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 6);
-const INTERVAL_MS = Number(process.env.INTERVAL_MS ?? 1500);
+let BATCH_SIZE = Number(process.env.BATCH_SIZE ?? 6);
+let INTERVAL_MS = Number(process.env.INTERVAL_MS ?? 1500);
 // How many exposure batches the coverage agent trails behind.
 const COVERAGE_LAG = Number(process.env.COVERAGE_LAG ?? 3);
 
@@ -248,6 +248,7 @@ input#viewurl{min-width:240px;flex:1}
 .btn.primary:hover{filter:brightness(1.08);color:#06221e}
 .btn.danger:hover{border-color:var(--danger);color:var(--danger)}
 .btn.ghost{padding:8px 13px}
+.btn.active{border-color:var(--accent);color:var(--accent);background:rgba(53,215,192,.10)}
 .progline{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--muted);margin:2px 0 7px}
 .progline.sub2{margin-top:14px}
 .mono{font-variant-numeric:tabular-nums;color:var(--fg)}
@@ -280,10 +281,16 @@ input#viewurl{min-width:240px;flex:1}
 <section class="panel">
 <div class="ctl-row">
 <label>Run <input id="run" value="take-1" aria-label="Run id"></label>
-<button class="btn primary" onclick="act('play')">&#9654; Play full</button>
+<button class="btn primary" onclick="act('play',sp())">&#9654; Play full</button>
 <button class="btn" onclick="act('stop')">&#9632; Stop</button>
 <button class="btn danger" onclick="act('reset')">&#8635; Reset</button>
 <button class="btn" onclick="restart()">&#8634; Stop and resume</button>
+</div>
+<div class="ctl-row sub">
+<span class="lbl">Speed</span>
+<button class="btn ghost spd" data-s="fast" onclick="setSpeed('fast')">Fast &middot; ~12s</button>
+<button class="btn ghost spd" data-s="demo" onclick="setSpeed('demo')">Demo &middot; ~22s</button>
+<button class="btn ghost spd" data-s="narrate" onclick="setSpeed('narrate')">Narrate &middot; ~40s</button>
 </div>
 <div class="ctl-row sub">
 <span class="lbl">Fill part way, then stop</span>
@@ -329,13 +336,17 @@ var $=function(id){return document.getElementById(id)};
 function usd(v){v=Number(v||0);if(v>=1e9)return '$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return '$'+Math.round(v/1e6)+'M';if(v>=1e3)return '$'+Math.round(v/1e3)+'K';return '$'+Math.round(v)}
 function getrun(){return ($('run').value||'take-1').trim()}
 var target=null,lastTotal=133;
-try{var a=localStorage.getItem('catdesk_run');if(a)$('run').value=a;var b=localStorage.getItem('catdesk_viewurl');if(b)$('viewurl').value=b}catch(e){}
+var SPEED={fast:{b:12,i:900},demo:{b:8,i:1200},narrate:{b:5,i:1600}},speed='demo';
+function sp(){return '&batch='+SPEED[speed].b+'&interval='+SPEED[speed].i}
+function paintSpeed(){var e=document.querySelectorAll('.spd');for(var i=0;i<e.length;i++){e[i].classList.toggle('active',e[i].getAttribute('data-s')===speed)}}
+function setSpeed(s){if(SPEED[s]){speed=s;try{localStorage.setItem('catdesk_speed',s)}catch(e){}paintSpeed()}}
+try{var a=localStorage.getItem('catdesk_run');if(a)$('run').value=a;var b=localStorage.getItem('catdesk_viewurl');if(b)$('viewurl').value=b;var c=localStorage.getItem('catdesk_speed');if(c&&SPEED[c])speed=c}catch(e){}
 $('atlaslink').href='https://app.toolbelt.ai/namespaces/664f9ed5-a82e-4908-92bb-d5d209f5fb1c';
 function save(){try{localStorage.setItem('catdesk_run',getrun());localStorage.setItem('catdesk_viewurl',$('viewurl').value)}catch(e){}}
-async function post(x){var r=await fetch('/'+x+'?run='+encodeURIComponent(getrun()),{method:'POST'});return await r.text()}
-async function act(x){target=null;$('status').textContent=await post(x);refresh()}
-async function playTo(frac){var t=lastTotal||133;target=Math.max(1,Math.round(frac*t));$('status').textContent='Filling to '+Math.round(frac*100)+'%  ('+target+' of '+t+' slices), then stopping.\\n'+await post('play');refresh()}
-async function restart(){$('status').textContent='Stopping the fleet\\u2026\\n'+await post('stop');var i=0;var h=setInterval(async function(){try{var s=await (await fetch('/status?run='+encodeURIComponent(getrun()))).json();if(!s.state.running|| ++i>25){clearInterval(h);$('status').textContent='Resuming from the shared brain\\u2026\\n'+await post('play');refresh()}}catch(e){clearInterval(h)}},800)}
+async function post(x,extra){var r=await fetch('/'+x+'?run='+encodeURIComponent(getrun())+(extra||''),{method:'POST'});return await r.text()}
+async function act(x,extra){target=null;$('status').textContent=await post(x,extra);refresh()}
+async function playTo(frac){var t=lastTotal||133;target=Math.max(1,Math.round(frac*t));$('status').textContent='Filling to '+Math.round(frac*100)+'%  ('+target+' of '+t+' slices), then stopping.\\n'+await post('play',sp());refresh()}
+async function restart(){$('status').textContent='Stopping the fleet\\u2026\\n'+await post('stop');var i=0;var h=setInterval(async function(){try{var s=await (await fetch('/status?run='+encodeURIComponent(getrun()))).json();if(!s.state.running|| ++i>25){clearInterval(h);$('status').textContent='Resuming from the shared brain\\u2026\\n'+await post('play',sp());refresh()}}catch(e){clearInterval(h)}},800)}
 function openView(){save();var u=$('viewurl').value.trim();if(u){window.open(u,'_blank')}else{$('status').textContent='Paste the published View URL first, then press Open View.'}}
 async function refresh(){try{
 var s=await (await fetch('/status?run='+encodeURIComponent(getrun()))).json();var m=s.summary||{};var st=s.state||{};
@@ -353,7 +364,7 @@ else if(st.error){$('status').textContent=st.error}
 }catch(e){$('status').textContent=String(e)}}
 $('run').addEventListener('change',function(){save();target=null;refresh()});
 $('viewurl').addEventListener('change',save);
-refresh();setInterval(refresh,2000);
+paintSpeed();refresh();setInterval(refresh,2000);
 </script></body></html>`;
 
 Bun.serve({
@@ -371,8 +382,13 @@ Bun.serve({
       }
       if (req.method === "POST" && url.pathname === "/play") {
         if (state.running) return new Response(`Already running ${state.runId}`, { status: 409 });
+        // Optional per-run pace, from the UI's speed control (clamped).
+        const b = Number(url.searchParams.get("batch"));
+        if (Number.isFinite(b) && b >= 1 && b <= 20) BATCH_SIZE = Math.floor(b);
+        const iv = Number(url.searchParams.get("interval"));
+        if (Number.isFinite(iv) && iv >= 200 && iv <= 6000) INTERVAL_MS = Math.floor(iv);
         play(runId);
-        return new Response(`Playing ${runId}`);
+        return new Response(`Playing ${runId} (batch ${BATCH_SIZE}, every ${INTERVAL_MS}ms)`);
       }
       if (req.method === "POST" && url.pathname === "/stop") {
         stopRequested = true;
