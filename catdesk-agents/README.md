@@ -23,6 +23,8 @@ cp catdesk-agents/.env.example catdesk-agents/.env   # set NEMOCLAW_PROVIDER_KEY
 ./catdesk-demo.sh                                     # from the repo root
 ```
 
+If a port is taken on the box (onboarding stops with "Port 8080 is not available"), set `NEMOCLAW_GATEWAY_PORT` in `.env` to a free port, and likewise `NEMOCLAW_DASHBOARD_PORT` (default 18789) or `TRIGGER_URL` (default `http://localhost:8787`). Keep them in `.env`: every `nemoclaw` command reads the gateway port, not just onboarding.
+
 The first run builds the `toolbelt-catdesk` sandbox with `scripts/setup.sh` (onboard, egress policy, Toolbelt install, personas), which takes about 10 minutes. Every run after that goes straight to the take.
 
 ## A take
