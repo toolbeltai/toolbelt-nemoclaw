@@ -1,0 +1,50 @@
+# Agent topology for the cat-desk demo. Applied at build time via:  nemoclaw onboard --agents agents.yaml
+# __MODEL_REF__ is filled by scripts/setup.sh from NEMOCLAW_MODEL.
+#
+# The agents are driven from the host as sibling turns (scripts/run-*.sh), never spawned by main:
+# NemoClaw #5237 blocks in-sandbox sessions_spawn (see ../toolbelt-shared-brain-demo/STATUS.md).
+# They never talk to each other. They coordinate through the shared Toolbelt namespace: the trigger
+# service and the coverage agent write findings and timeline events, the synthesis agent reads them.
+
+defaults:
+  subagents:
+    maxSpawnDepth: 1
+
+# main is required by NemoClaw but does no work in this demo.
+main:
+  tools:
+    profile: coding
+    allow:
+      - read
+      - session_status
+
+agents:
+  # coverage: on camera mid-take. Reads what the exposure agents left in the brain and records the
+  # correction: ground-up loss is not what policies pay.
+  - id: coverage
+    tools:
+      # Toolbelt tools ONLY, so the model cannot wander into code tools.
+      profile: coding
+      allow:
+        - toolbelt__toolbelt_sql
+        - toolbelt__toolbelt_record
+
+  # synthesis: the morning beat. SQL for amounts, the graph for who is connected, then a decision on
+  # the timeline and a brief saved as a document the View shows. Reads approved lessons first.
+  - id: synthesis
+    tools:
+      profile: coding
+      allow:
+        - toolbelt__toolbelt_lesson
+        - toolbelt__toolbelt_sql
+        - toolbelt__toolbelt_graph
+        - toolbelt__toolbelt_record
+        - toolbelt__toolbelt_save
+
+  # governance: turns one cat manager correction into a proposed lesson. Its only tool is
+  # lesson_propose, so it cannot redo the brief (a synthesis agent given the correction once did).
+  - id: governance
+    tools:
+      profile: coding
+      allow:
+        - toolbelt__toolbelt_lesson_propose
